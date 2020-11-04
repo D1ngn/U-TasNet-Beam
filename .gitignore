@@ -1,0 +1,6 @@
+__pycache__/
+data/
+audio_data/
+ckpt/
+output/
+test/
