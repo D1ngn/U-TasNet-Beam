@@ -4,32 +4,38 @@ import matplotlib.pyplot as plt
 import librosa
 import soundfile as sf
 
-#　音声データをロードし、指定された秒数とサンプリングレートでリサンプル
-def load_audio_file(file_path, length, num_channels, sampling_rate=16000):
+from scipy import signal
+
+
+# 音声データをロードし、指定された秒数とサンプリングレートでリサンプル
+def load_audio_file(file_path, length, sample_rate):
     data, sr = sf.read(file_path)
     # データが設定値よりも大きい場合は大きさを超えた分をカットする
     # データが設定値よりも小さい場合はデータの後ろを0でパディングする
-    # 1ch(モノラル)の場合
-    if num_channels == 1:
-        if len(data) > sampling_rate*length:
-            data = data[:sampling_rate*length]
+    # シングルチャンネル(モノラル)の場合 (data.shape: [num_samples,])
+    if data.ndim == 1:
+        if len(data) > sample_rate*length:
+            data = data[:sample_rate*length]
         else:
-            data = np.pad(data, (0, max(0, sampling_rate*length - len(data))), "constant")
-    # マルチチャンネルの場合
-    elif num_channels > 1:
-        if data.shape[0] > sampling_rate*length:
-            data = data[:sampling_rate*length, :]
+            data = np.pad(data, (0, max(0, sample_rate*length - len(data))), "constant")
+        """data: (num_samples, )"""
+    # マルチチャンネルの場合 (data.shape: [num_samples, num_channels])
+    elif data.ndim == 2:
+        if data.shape[0] > sample_rate*length:
+            data = data[:sample_rate*length, :]
         else:
-            data = np.pad(data, [(0, max(0, sampling_rate*length-data.shape[0])), (0, 0)], "constant")
+            data = np.pad(data, [(0, max(0, sample_rate*length-data.shape[0])), (0, 0)], "constant")
+        """data: (num_samples, num_channels)"""
     else:
-        print("please designate correct num_channels")
+        print("number of audio channels are incorrect")
     return data
 
 
 # 音声データを指定したサンプリングレートで保存
 def save_audio_file(file_path, data, sampling_rate=16000):
-    # librosa.output.write_wav(file_path, data, sampling_rate) # 正常に動作しないので変更
+    """"data: (num_samples, num_channels)"""
     sf.write(file_path, data, sampling_rate)
+
 
 # 2つのオーディオデータを足し合わせる
 def audio_mixer(data1, data2):
@@ -37,17 +43,31 @@ def audio_mixer(data1, data2):
     mixed_audio = data1 + data2
     return mixed_audio
 
-# 音声データをスペクトログラムに変換する
+# 音声データを振幅スペクトログラムと位相スペクトログラムに変換する
 def wave_to_spec(data, fft_size, hop_length, win_length=None):
     # 短時間フーリエ変換(STFT)を行い、スペクトログラムを取得
-    spec = librosa.stft(data, n_fft=fft_size, hop_length=hop_length, win_length=win_length)
-    mag = np.abs(spec) # 振幅スペクトログラムを取得
-    phase = np.exp(1.j * np.angle(spec)) # 位相スペクトログラムを取得(フェーザ表示)
-    # mel_spec = librosa.feature.melspectrogram(data, sr=sr, n_mels=128) # メルスペクトログラムを用いる場合はこっちを使う
-    return mag, phase
+    complex_spec = librosa.stft(data, n_fft=fft_size, hop_length=hop_length, win_length=win_length, window='hann')
+    # amp_spec = np.abs(complex_spec) # 振幅スペクトログラムを取得
+    # phase_spec = np.exp(1j * np.angle(complex_spec)) # 位相スペクトログラムを取得(フェーザ表示)
+    # return amp_spec, phase_spec
+    return complex_spec
+
+# マルチチャンネルの音声データをスペクトログラムに変換する
+def wave_to_spec_multi(data, sample_rate, fft_size, hop_length):
+    """
+    data: (num_channels, num_samples)
+    sample_rate: sampling rate (int)
+    fft_size: length of each segment (int)
+    hop_length: shift size of each segment (int)
+    """
+    f, t, complex_spec = signal.stft(data, fs=sample_rate, window='hann', nperseg=fft_size, noverlap=fft_size-hop_length)
+    """f: (freq_bins,), t: (time_frames,), spectrogram: (num_microphones, freq_bins, time_frames)"""
+    amp_spec = np.abs(complex_spec) # 振幅スペクトログラムを取得
+    # phase_spec = np.exp(1j * np.angle(complex_spec)) # 位相スペクトログラムを取得(フェーザ表示)
+    return complex_spec, amp_spec
 
 # スペクトログラムを音声データに変換する
-def spec_to_wav(spec, hop_length):
+def spec_to_wave(spec, hop_length):
     # 逆短時間フーリエ変換(iSTFT)を行い、スペクトログラムから音声データを取得
     wav_data = librosa.istft(spec, hop_length=hop_length)
     return wav_data
@@ -84,12 +104,16 @@ def wave_plot(input_path, output_path, fig_title=None):
     ax.legend(edgecolor="black") # 凡例を追加
     fig.savefig(output_path) # グラフを保存
 
+
 if __name__ == "__main__":
 
-    audio_path = "./data/1-155858-E-25.wav"
-    sampling_rate = 16000
+    # audio_path = "./data/1-155858-E-25.wav"
+    sample_rate = 16000
     audio_length = 3
-    audio_channels = 1
+    audio_channels = 8
+    fft_size = 512
+    hop_length = 160
+
 
     # spec_shape:[257, 301]
     # n_fft = 512 # 64ms
@@ -102,11 +126,37 @@ if __name__ == "__main__":
     # hop_length = 128 # 8ms
 
     # spec_shape:[257, 301]
-    n_fft = 1024 # 64ms
-    win_length = None
-    hop_length = 256 # 16ms
+    # n_fft = 1024 # 64ms
+    # win_length = None
+    # hop_length = 256 # 16ms
 
-    audio_data = load_audio_file(audio_path, audio_length, audio_channels, sampling_rate)
-    spec_mag, spec_phase = wave_to_spec(audio_data, n_fft, hop_length, win_length)
-    print(spec_mag.shape)
-    print(spec_phase.shape)
+    # audio_data = load_audio_file(audio_path, audio_length, audio_channels, sampling_rate)
+    # spec_mag, spec_phase = wave_to_spec(audio_data, n_fft, hop_length, win_length)
+    # print(spec_mag.shape)
+    # print(spec_phase.shape)
+
+    audio_path = "./test/p232_007/p232_007_mixed.wav"
+    audio_data = load_audio_file(audio_path, audio_length, sample_rate)
+    """audio_data: (num_samples=48000, num_channels=8)"""
+    audio_data = audio_data.transpose(1, 0)
+    """audio_data: (num_channels=8, num_samples=48000)"""
+    multi_complex_spec = wave_to_spec_multi(audio_data, sample_rate, fft_size, hop_length)
+    """multi_complex_spec: (num_channels=8, freq_bins=257, time_steps=301)"""
+    print(multi_complex_spec.shape)
+    
+    # マルチチャンネル音声データをスペクトログラムに変換
+    mulichannel_complex_spec = [] # それぞれのチャンネルの複素スペクトログラムを格納するリスト
+    audio_data = load_audio_file(audio_path, audio_length, sample_rate)
+    audio_data = np.asfortranarray(audio_data) # Fortran-contiguousに変換（これがないとエラーが出る）
+    for i in range(audio_channels):
+        # オーディオデータをスペクトログラムに変換
+        complex_spec = wave_to_spec(audio_data[:, i], fft_size, hop_length)
+        mulichannel_complex_spec.append(complex_spec)
+    mulichannel_complex_spec = np.array(mulichannel_complex_spec)
+    """mulichannel_complex_spec: (num_channels=8, freq_bins=257, time_steps=301)"""
+    print(mulichannel_complex_spec.shape)
+
+
+    # print(multi_complex_spec-mulichannel_complex_spec)
+
+

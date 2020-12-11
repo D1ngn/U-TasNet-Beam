@@ -8,6 +8,7 @@ import torch.optim as optim
 import torch.utils.data as data
 
 import os
+import sys
 import numpy as np
 import pyaudio
 import wave
@@ -20,7 +21,7 @@ import sounddevice as sd
 import soundfile as sf
 
 from models import MCDUnet_kernel3
-from utils import wave_to_spec, spec_to_wav, save_audio_file
+from utils import wave_to_spec, spec_to_wave, save_audio_file
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -68,6 +69,8 @@ def audio_callback(indata, frames, time, status):
     """This is called (from a separate thread) for each audio block."""
     if status:
         print(status, file=sys.stderr)
+    # マイクロホンのゲイン調整
+    indata = indata * args.mic_gain
     # 雑音除去を行う場合
     if args.denoising_mode:
         # マルチチャンネルオーディオデータをスペクトログラムに変換
@@ -88,7 +91,7 @@ def audio_callback(indata, frames, time, status):
         multichannel_estimated_voice_data= np.zeros(audio_data.shape, dtype='float32') # マルチチャンネル音声波形を格納する配列
         for i in range(voice_spec.shape[0]):
             # 1chごとスペクトログラムを音声波形に変換
-            estimated_voice_data = spec_to_wav(voice_spec[i, :, :], args.hop_length)
+            estimated_voice_data = spec_to_wave(voice_spec[i, :, :], args.hop_length)
             multichannel_estimated_voice_data[:, i] = estimated_voice_data
         """multichannel_estimated_voice_data: (num_samples, num_channels=8)"""
         q.put(multichannel_estimated_voice_data)
@@ -104,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument('-dm', '--denoising_mode', action='store_true', help='whether model denoises audio or not')
     parser.add_argument('-rt', '--record_time', type=int_or_str, default=None, help="recording time[sec]")
     parser.add_argument('-d', '--device', type=int_or_str, default=0, help='input device (numeric ID or substring)')
+    parser.add_argument('-mg', '--mic_gain', type=int, default=1, help='Microphone gain')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate')
     parser.add_argument('-c', '--channels', type=int, default=8, help='number of input channels')
     parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform')
@@ -114,7 +118,8 @@ if __name__ == "__main__":
     os.makedirs(wave_dir, exist_ok=True)
     estimated_voice_path = os.path.join(wave_dir, "record.wav")
     # 学習済みのパラメータを保存したチェックポイントファイルのパスを指定
-    checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_fft_512_kernel3_multi_1007/ckpt_epoch200.pt"
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_fft_512_kernel3_multi_1007/ckpt_epoch200.pt" # 英語版
+    checkpoint_path = "./ckpt/ckpt_JVS_fft_512_kernel3_multi_all_1109/ckpt_epoch210.pt" # 日本語版
     # ネットワークモデルを指定
     model = MCDUnet_kernel3()
     # GPUが使える場合はGPUを使用、使えない場合はCPUを使用

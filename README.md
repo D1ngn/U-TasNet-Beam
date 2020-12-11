@@ -1,4 +1,4 @@
-# Multi-Channel Denoising Unet
+# MaskBeamformer
 
 ###　概要
 
@@ -22,10 +22,10 @@ $ python3 training.py
 
 
 
-### Evaluation
+### Inference
 
 ```
-$ python3 inference_for_eval.py
+$ python3 inference.py
 ```
 
 

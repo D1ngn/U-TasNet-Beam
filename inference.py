@@ -17,25 +17,21 @@ import wave
 import subprocess
 import time
 
-from models import MCDUnet_kernel3
+from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3
+from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, gev_beamformer, sparse, ds_beamformer, mwf
 
 from natsort import natsorted
 from tqdm import tqdm
 
-# 音声評価用
+# 音声処理用
 import sys
 sys.path.append('..')
-from MyLibrary.MyFunc import wave_plot, audio_eval, load_audio_file, save_audio_file, wave_to_spec
+from MyLibrary.MyFunc import wave_plot, audio_eval, load_audio_file, save_audio_file, wave_to_spec, spec_to_wave
+from training import AudioProcess
 
 # モデルのパラメータ数をカウント
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-# スペクトログラムを音声データに変換する
-def spec_to_wav(spec, hop_length):
-    # 逆短時間フーリエ変換(iSTFT)を行い、スペクトログラムから音声データを取得
-    wav_data = librosa.istft(spec, hop_length=hop_length)
-    return wav_data
 
 # スペクトログラムを図にプロットする関数
 def spec_plot(base_dir, wav_path, save_path, audio_length):
@@ -48,27 +44,36 @@ def spec_plot(base_dir, wav_path, save_path, audio_length):
     cmd2 = "mv {} {}".format(spec_path, save_path)
     subprocess.call(cmd2, shell=True)
 
-if __name__ == '__main__':
+# データを標準化（平均0、分散1に正規化（Z-score Normalization））
+def standardize(data):
+    data_mean = data.mean(keepdims=True)
+    data_std = data.std(keepdims=True, ddof=0) # 母集団の標準偏差（標本標準偏差を使用する場合はddof=1）
+    standardized_data = (data - data_mean) / data_std
+    return standardized_data
 
-    sampling_rate = 16000 # 作成するオーディオファイルのサンプリング周波数を指定
+if __name__ == '__main__':
+    # 各パラメータを設定
+    sample_rate = 16000 # 作成するオーディオファイルのサンプリング周波数を指定
     audio_length = 3 # 単位は秒(second) → fft_size=1024,hop_length=768のとき、audio_length=6が最適かも？
     fft_size = 512 # 高速フーリエ変換のフレームサイズ
     hop_length = 160 # 高速フーリエ変換におけるフレームのスライド幅
     spec_frame_num = 64 # スペクトログラムのフレーム数 spec_freq_dim=512のとき、音声の長さが5秒の場合は128, 3秒の場合は64
-
-    # 音声ファイルのディレクトリを指定
-#     target_voice_dir = "../data/NoisySpeechDatabase/clean_testset_wav_16kHz/"
-#     interference_audio_dir = "../data/NoisySpeechDatabase/interference_testset_wav_16kHz/"
-#     mixed_audio_dir = "../data/NoisySpeechDatabase/noisy_testset_wav_16kHz/"
-    # test_data_dir = "../data/NoisySpeechDataset_for_unet_fft_512_8ch_1007/test"
-
-#     target_voice_path_list = natsorted(glob.glob(os.path.join(test_data_dir, "*_target.wav")))
-#     interference_audio_path_list = natsorted(glob.glob(os.path.join(test_data_dir, "*_interference.wav")))
-    # mixed_audio_path_list = natsorted(glob.glob(os.path.join(test_data_dir, "*_mixed.wav")))
-
-    target_voice_file = "./test/p232_007/p232_007_target.wav"
-    interference_audio_file = "./test/p232_007/p232_007_interference.wav"
-    mixed_audio_file = "./test/p232_007/p232_007_mixed.wav"
+    # マスクのチャンネルを指定（いずれはconfigまたはargsで指定）TODO
+    target_aware_channel = 0
+    noise_aware_channel = 4
+    
+    # 英語（男性）
+    # target_voice_file = "./test/p232_016/p232_016_target.wav"
+    # interference_audio_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
+    # mixed_audio_file = "./test/p232_016/p232_016_mixed_azimuth45.wav"
+    # 英語（女性）
+    target_voice_file = "./test/p257_006/p257_006_target.wav"
+    interference_audio_file = "./test/p257_006/p257_006_interference_azimuth60.wav"
+    mixed_audio_file = "./test/p257_006/p257_006_mixed_azimuth60.wav"
+    # 日本語（女性）
+    # target_voice_file = "./test/JVS/BASIC5000_0145_target.wav"
+    # interference_audio_file = "./test/JVS/BASIC5000_0145_interference.wav"
+    # mixed_audio_file = "./test/JVS/BASIC5000_0145_mixed.wav"
 
     wave_dir = "./output/wave/"
     os.makedirs(wave_dir, exist_ok=True)
@@ -80,9 +85,29 @@ if __name__ == '__main__':
     os.makedirs(spec_dir, exist_ok=True)
 
     # 学習済みのパラメータを保存したチェックポイントファイルのパスを指定
-    checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_fft_512_kernel3_multi_1007/ckpt_epoch200.pt"
-    # ネットワークモデルを指定
-    model = MCDUnet_kernel3()
+    # NoisySpeechDataset_for_unet_fft_512_multi_wav_1207で学習
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_BLSTM_1202/ckpt_epoch80.pt" # BLSTM
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_FC_1202/ckpt_epoch80.pt" # FC
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1201/ckpt_epoch70.pt" # BLSTM small
+    checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1208/ckpt_epoch110.pt" # U-Net aware channel←ベストモデル
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_median_1209/ckpt_epoch50.pt" # U-Net median operation
+    # NoisySpeechDataset_for_unet_fft_512_multi_wav_1209で学習
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_logmel_BLSTM_1209/ckpt_epoch50.pt" # BLSTM-logmel
+    # マスク推定モデルのタイプを指定
+    model_type = 'Unet' # 'FC' or 'BLSTM' or 'Unet'
+    # ビームフォーマのタイプを指定
+    beamformer_type = 'MVDR' # 'DS' or 'MVDR' or 'GEV', or 'MWF' or 'Sparse'
+
+    # ネットワークモデルを定義
+    if model_type == 'BLSTM':
+        model = BLSTMMaskEstimator()
+    elif model_type == 'FC':
+        model = FCMaskEstimator()
+    elif model_type == 'Unet':
+        model = UnetMaskEstimator_kernel3()
+        pass
+    # 前処理クラスのインスタンスを作成
+    transform = AudioProcess(audio_length, sample_rate, fft_size, hop_length, model_type)
     # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("使用デバイス：" , device)
@@ -94,93 +119,103 @@ if __name__ == '__main__':
     # ネットワークを推論モードへ
     model.eval()
 
-    # 音声評価結果の合計値を格納するリストを用意
-    sdr_mix_list = []
-    sir_mix_list = []
-    sar_mix_list = []
-    sdr_est_list = []
-    sir_est_list = []
-    sar_est_list = []
-
-    # 分離処理の開始時間
+    # 処理の開始時間
     start_time = time.perf_counter()
-    # for mixed_audio_path in tqdm(mixed_audio_path_list):
-    # 音声データをロード(現在は学習時と同じ処理をしているが、いずれはマイクロホンのリアルストリーミング音声を入力にしたい)
-    mixed_audio_data = load_audio_file(mixed_audio_file, audio_length, sampling_rate)
-    mixed_audio_data = np.asfortranarray(mixed_audio_data) # これがないとエラーが出る
-    """mixed_audio_data: (num_samples, num_channels=8)"""
-    mixed_audio_path = "./test/mixed_audio.wav"
-    save_audio_file(mixed_audio_path, mixed_audio_data, sampling_rate=16000)
-    # マルチチャンネルオーディオデータをスペクトログラムに変換
-    multichannel_mixed_amp_spec = [] # 振幅スペクトログラム
-    multichannel_mixed_phase_spec = [] # 位相スペクトログラム
-    for i in range(mixed_audio_data.shape[1]):
-        # オーディオデータをスペクトログラムに変換
-        mixed_amp, mixed_phase = wave_to_spec(mixed_audio_data[:, i], fft_size, hop_length)
-        multichannel_mixed_amp_spec.append(mixed_amp)
-        multichannel_mixed_phase_spec.append(mixed_phase)
-    multichannel_mixed_amp_spec = np.array(multichannel_mixed_amp_spec)
-    """multichannel_mixed_amp_spec: (num_channels=8, freq_bins=257, time_frames=301)"""
-    multichannel_mixed_phase_spec = np.array(multichannel_mixed_phase_spec)
-    """multichannel_mixed_phase_spec: (num_channels=8, freq_bins=257, time_frames=301)"""
-    # 振幅スペクトログラムを正規化
-    max_amp = multichannel_mixed_amp_spec.max()
-    normed_multichannel_mixed_amp_spec = multichannel_mixed_amp_spec / max_amp
-    # データの形式をモデルに入力できる形式に変更する
-    # モデルの入力サイズに合わせてpadding
-    amp_spec_padded = np.pad(normed_multichannel_mixed_amp_spec, [(0, 0), (0, 0), (0, 513-normed_multichannel_mixed_amp_spec.shape[2])], 'constant')
-    phase_spec_padded = np.pad(multichannel_mixed_phase_spec, [(0, 0), (0, 0), (0, 513-multichannel_mixed_phase_spec.shape[2])], 'constant')
-    # 1次元目に次元を追加
-    amp_spec_expanded = amp_spec_padded[np.newaxis, :, :, :]
-    """amp_spec_expanded: (1, 8, 257, 513)"""
-    phase_spec_expanded = phase_spec_padded[np.newaxis, :, :, :]
-    """phase_spec_expanded: (1, 8, 257, 513)"""
+    # マルチチャンネル音声データを複素スペクトログラムと振幅スペクトログラムに変換
+    mixed_complex_spec, mixed_amp_spec = transform(mixed_audio_file)
+    """mixed_complex_spec: (num_channels, freq_bins, time_steps), mixed_amp_spec: (num_channels, freq_bins, time_steps)"""
+    # 振幅スペクトログラムを標準化
+    mixed_amp_spec = standardize(mixed_amp_spec)
     # numpy形式のデータをpytorchのテンソルに変換
-    amp_spec_tensor = torch.from_numpy(amp_spec_expanded.astype(np.float32)).clone()
-    # 環境音のmaskを計算
-    mask = model(amp_spec_tensor)
-    # pytorchのtensorをnumpy配列に変換
-    mask = mask.detach().numpy().copy() # CPU
-    # 人の声を取り出す
-    normed_estimated_amp_spec = mask * amp_spec_expanded
-    # 正規化によって小さくなった音量を元に戻す
-    estimated_amp_spec = normed_estimated_amp_spec * max_amp
-    # マスクした後の振幅スペクトログラムに入力音声の位相スペクトログラムを掛け合わせて音声を復元
-    voice_spec = estimated_amp_spec * phase_spec_expanded
-    """voice_spec: (batch_size=1, num_channels=8, freq_bins=257, time_frames=513)"""
-    voice_spec = np.squeeze(voice_spec)
-    """voice_spec: (num_channels=8, freq_bins=257, time_frames=513)"""
-    # 前処理の際にpaddingしたスペクトログラムを元の形に戻す
-    voice_spec = voice_spec[:, :, :normed_multichannel_mixed_amp_spec.shape[2]]
-    """voice_spec: (num_channels=8, freq_bins=257, time_frames=301)"""
+    mixed_amp_spec = torch.from_numpy(mixed_amp_spec.astype(np.float32)).clone()
+    # モデルに入力できるようにバッチサイズの次元を追加
+    mixed_amp_spec = mixed_amp_spec.unsqueeze(0)
+    """mixed_amp_spec: (batch_size, num_channels, freq_bins, time_steps)"""
+    # 音源方向推定情報を含むマスクを推定
+    target_mask_output, noise_mask_output = model(mixed_amp_spec)
+    if model_type == 'FC' or 'Unet':
+        # マスクのチャンネルを指定（目的音に近いチャンネルと雑音に近いチャンネル）
+        estimated_target_mask = target_mask_output[:, target_aware_channel, :, :]
+        """estimated_target_mask: (batch_size, freq_bins, time_steps)"""
+        estimated_noise_mask = noise_mask_output[:, noise_aware_channel, :, :]
+        """estimated_noise_mask: (batch_size, freq_bins, time_steps)"""
+    elif model_type == 'BLSTM':
+        # 複数チャンネル間のマスク値の中央値をとる（median pooling）
+        (estimated_target_mask, _) = torch.median(target_mask_output, dim=1)
+        """estimated_target_mask: (batch_size, freq_bins, time_steps)"""
+        (estimated_noise_mask, _) = torch.median(noise_mask_output, dim=1)
+        """estimated_noise_mask: (batch_size, freq_bins, time_steps)"""
+    else:
+        print("Please specify the correct model type")
+    # バッチサイズの次元を削除
+    estimated_target_mask = estimated_target_mask.squeeze(0)
+    """estimated_target_mask: (freq_bins, time_steps)"""
+    estimated_noise_mask = estimated_noise_mask.squeeze(0)
+    """estimated_noise_mask: (freq_bins, time_steps)"""
+    # U-Netの場合paddingされた分を削除する
+    if model_type == 'Unet':
+        # とりあえずハードコーディング TODO
+        mixed_complex_spec = mixed_complex_spec[:, :, :301]
+        estimated_target_mask = estimated_target_mask[:, :301] 
+        estimated_noise_mask = estimated_noise_mask[:, :301]
+    
+    # pytorchのテンソルをnumpy形式のデータに変換
+    estimated_target_mask = estimated_target_mask.detach().numpy().copy() # CPU
+    estimated_noise_mask = estimated_noise_mask.detach().numpy().copy() # CPU
+    # 目的音のマスクと雑音のマスクからそれぞれの空間共分散行列を推定
+    target_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_target_mask)
+    noise_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_noise_mask)
+    noise_covariance_matrix = condition_covariance(noise_covariance_matrix, 1e-6) # これがないと性能が大きく落ちる（雑音の共分散行列のみで良い）
+    # noise_covariance_matrix /= np.trace(noise_covariance_matrix, axis1=-2, axis2=-1)[..., None, None]
+    # ビームフォーマによる雑音除去を実行
+    if beamformer_type == 'MVDR':
+        # target_steering_vectors = estimate_steering_vector(target_covariance_matrix)
+        # estimated_spec = mvdr_beamformer(mixed_complex_spec, target_steering_vectors, noise_covariance_matrix)
+        estimated_spec = mvdr_beamformer(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
+    elif beamformer_type == 'GEV':
+        estimated_spec = gev_beamformer(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
+    elif beamformer_type == "DS":
+        target_steering_vectors = estimate_steering_vector(target_covariance_matrix)
+        estimated_spec = ds_beamformer(mixed_complex_spec, target_steering_vectors)
+    elif beamformer_type == "MWF":
+        estimated_spec = mwf(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
+    elif beamformer_type == 'Sparse':
+        estimated_spec = sparse(mixed_complex_spec, estimated_target_mask) # マスクが正常に推定できているかどうかをテストする用
+    else:
+        print("Please specify the correct beamformer type")
+    """estimated_spec: (num_channels, freq_bins, time_frames)"""
+
     # マルチチャンネルスペクトログラムを音声波形に変換
-    multichannel_estimated_voice_data= np.zeros(mixed_audio_data.shape, dtype='float32') # マルチチャンネル音声波形を格納する配列
-    for i in range(voice_spec.shape[0]):
-        # 1chごとスペクトログラムを音声波形に変換
-        estimated_voice_data = spec_to_wav(voice_spec[i, :, :], hop_length)
+    mixed_audio_data = load_audio_file(mixed_audio_file, audio_length, sample_rate)
+    """mixed_audio_data: (num_samples, num_channels)"""
+    multichannel_estimated_voice_data= np.zeros(mixed_audio_data.shape, dtype='float64') # マルチチャンネル音声波形を格納する配列
+    # 1chごとスペクトログラムを音声波形に変換
+    for i in range(estimated_spec.shape[0]):
+        # estimated_voice_data = spec_to_wave(estimated_spec[i, :, :], hop_length)
+        estimated_voice_data = librosa.core.istft(estimated_spec[i, :, :], hop_length=hop_length)
         multichannel_estimated_voice_data[:, i] = estimated_voice_data
-    multichannel_estimated_voice_data = np.array(multichannel_estimated_voice_data)
-    """multichannel_mixed_amp_spec: (num_samples, num_channels=8)"""
-    # オーディオデータを保存
-    estimated_voice_path = os.path.join(wave_dir, "estimated_voice.wav")
-    save_audio_file(estimated_voice_path, multichannel_estimated_voice_data, sampling_rate=16000)
-    # 分離処理の終了時間
+    """multichannel_estimated_voice_data: (num_samples, num_channels)"""
+    # 処理の終了時間
     finish_time = time.perf_counter()
     # 処理時間
     process_time = finish_time - start_time
     print("処理時間：", str(process_time) + 'sec')
-    # デバッグ用に元のオーディオファイルとそのスペクトログラムを保存
+
+    # オーディオデータを保存
+    estimated_voice_path = os.path.join(wave_dir, "estimated_voice.wav")
+    save_audio_file(estimated_voice_path, multichannel_estimated_voice_data, sample_rate=16000)
+    # デバッグ用に元のオーディオデータとそのスペクトログラムを保存
     # オリジナル音声
     target_voice_path = os.path.join(wave_dir, "target_voice.wav")
-    target_voice_data = load_audio_file(target_voice_file, audio_length, sampling_rate)
-    save_audio_file(target_voice_path, target_voice_data, sampling_rate=16000)
+    target_voice_data = load_audio_file(target_voice_file, audio_length, sample_rate)
+    save_audio_file(target_voice_path, target_voice_data, sample_rate=16000)
     # 外的雑音
     interference_audio_path = os.path.join(wave_dir, "interference_audio.wav")
-    interference_audio_data = load_audio_file(interference_audio_file, audio_length, sampling_rate)
-    save_audio_file(interference_audio_path, interference_audio_data, sampling_rate=16000)
+    interference_audio_data = load_audio_file(interference_audio_file, audio_length, sample_rate)
+    save_audio_file(interference_audio_path, interference_audio_data, sample_rate=16000)
     # 混合音声
     mixed_audio_path = os.path.join(wave_dir, "mixed_audio.wav")
-    save_audio_file(mixed_audio_path, mixed_audio_data, sampling_rate=16000)
+    save_audio_file(mixed_audio_path, mixed_audio_data, sample_rate=16000)
 
     # # 音声の波形を画像として保存（マルチチャンネル未対応）
     # # オリジナル音声の波形
@@ -213,6 +248,7 @@ if __name__ == '__main__':
     spec_plot(base_dir, mixed_audio_path, mixed_audio_spec_path, audio_length)
 
     # 音声評価
-    sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = audio_eval(audio_length, target_voice_path, interference_audio_path, mixed_audio_path, estimated_voice_path)
+    sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = \
+        audio_eval(audio_length, sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_voice_path)
     print("SDR_mix: {:.3f}, SIR_mix: {:.3f}, SAR_mix: {:.3f}".format(sdr_mix, sir_mix, sar_mix))
     print("SDR_est: {:.3f}, SIR_est: {:.3f}, SAR_est: {:.3f}".format(sdr_est, sir_est, sar_est))

@@ -3,4 +3,6 @@ data/
 audio_data/
 ckpt/
 output/
+eval_result/
 test/
+test.py
