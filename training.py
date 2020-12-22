@@ -30,8 +30,7 @@ torch.manual_seed(0)
 
 # データの前処理を行うクラス
 class AudioProcess():
-    def __init__(self, audio_length, sample_rate, fft_size, hop_length, model_type):
-        self.audio_length = audio_length
+    def __init__(self, sample_rate, fft_size, hop_length, model_type):
         self.sample_rate = sample_rate
         self.fft_size = fft_size
         self.hop_length = hop_length
@@ -101,10 +100,10 @@ class AudioProcess():
         """log_mel_spec: (num_channels, num_mels, time_steps)"""
         return log_mel_spec
     
-    def __call__(self, data_path):
-        # 音声波形データをロード
-        wav_data = load_audio_file(data_path, self.audio_length, self.sample_rate)
-        """wav_data: (num_samples, num_channels)"""
+    def __call__(self, wav_data):
+        # # 音声波形データをロード
+        # wav_data = load_audio_file(data_path, self.audio_length, self.sample_rate)
+        # """wav_data: (num_samples, num_channels)"""
 
         # マルチチャンネル音声データをスペクトログラムに変換
         multi_complex_spec = self.calc_complex_spec(wav_data)
@@ -127,12 +126,14 @@ class AudioProcess():
         # # 振幅スペクトログラムの代わりにログメルスペクトログラムを使用する場合 TODO
         # multi_log_mel_spec = self.calc_log_mel_spec(multi_complex_spec)
         # return multi_complex_spec, multi_amp_spec, multi_log_mel_spec
+
         return multi_complex_spec, multi_amp_spec
+        # return multi_complex_spec, multi_log_spec
 
 # データセットのクラス
 class IRMDataset(data.Dataset):
-    def __init__(self, mixed_spec_list, target_spec_list, interference_spec_list, transform, model_type, sample_rate, num_channels, fft_size, num_mels=20, \
-        target_aware_channel=0, noise_aware_channel=4):
+    def __init__(self, mixed_spec_list, target_spec_list, interference_spec_list, transform, model_type, \
+        audio_length, sample_rate, num_channels, fft_size, num_mels=20, target_aware_channel=0, noise_aware_channel=4):
         self.mixed_spec_list = mixed_spec_list # 混合音声のファイルリスト
         self.target_spec_list = target_spec_list # 目的音のファイルリスト
         self.interference_spec_list = interference_spec_list # 干渉音のファイルリスト
@@ -140,6 +141,7 @@ class IRMDataset(data.Dataset):
         self.model_type = model_type
         self.target_aware_channel = target_aware_channel # 目的音に近い位置にあるチャンネル TODO
         self.noise_aware_channel = noise_aware_channel # 雑音に近い位置にあるチャンネル TODO
+        self.audio_length = audio_length
         # ログメルスペクトログラム算出用（使用するかは要検討）
         self.sample_rate = sample_rate
         self.num_channels = num_channels
@@ -172,14 +174,22 @@ class IRMDataset(data.Dataset):
         # ファイルパスを取得
         mixed_wav_path = self.mixed_spec_list[index]
         target_wav_path = self.target_spec_list[index]
-        interference_spec_path = self.interference_spec_list[index]
+        interference_wav_path = self.interference_spec_list[index]
+
+        # 音声波形データをロード
+        mixed_wav_data = load_audio_file(mixed_wav_path, self.audio_length, self.sample_rate)
+        """mixed_wav_data: (num_samples, num_channels)"""
+        target_wav_data = load_audio_file(target_wav_path, self.audio_length, self.sample_rate)
+        """target_wav_data: (num_samples, num_channels)"""
+        interference_wav_data = load_audio_file(interference_wav_path, self.audio_length, self.sample_rate)
+        """interference_wav_data: (num_samples, num_channels)"""
 
         # 音声波形データを振幅スペクトログラムに変換
-        _, mixed_amp_spec = self.transform(mixed_wav_path)
+        _, mixed_amp_spec = self.transform(mixed_wav_data)
         """mixed_amp_spec: (num_channels, freq_bins, time_steps)"""
-        _, target_amp_spec = self.transform(target_wav_path)
+        _, target_amp_spec = self.transform(target_wav_data)
         """target_amp_spec: (num_channels, freq_bins, time_steps)"""
-        _, interference_amp_spec = self.transform(interference_spec_path)
+        _, interference_amp_spec = self.transform(interference_wav_data)
         """interference_amp_spec: (num_channels, freq_bins, time_steps)"""
 
         # # 音声波形データをログスペクトログラムに変換
@@ -192,6 +202,7 @@ class IRMDataset(data.Dataset):
 
         # IRM(Ideal Ratio Mask)を算出（教師データ）
         target_IRM, noise_IRM = self.calc_ideal_ratio_mask(target_amp_spec, interference_amp_spec)
+        # target_IRM, noise_IRM = self.calc_ideal_ratio_mask(target_log_spec, interference_log_spec)
         """target_IRM: (num_channels, freq_bins, time_steps), noise_IRM: (num_channels, freq_bins, time_steps)"""
         # 複数チャンネルのうち1チャンネル分のマスクを算出
         if self.model_type == 'FC' or 'Unet':
@@ -210,7 +221,15 @@ class IRMDataset(data.Dataset):
         mixed_amp_spec = torch.from_numpy(mixed_amp_spec.astype(np.float32)).clone()
         target_IRM = torch.from_numpy(target_IRM.astype(np.float32)).clone()
         noise_IRM = torch.from_numpy(noise_IRM.astype(np.float32)).clone()
+
+        # # ログメルスペクトログラムの場合
+        # # numpy形式のデータをpytorchのテンソルに変換
+        # mixed_log_spec = torch.from_numpy(mixed_log_spec.astype(np.float32)).clone()
+        # target_IRM = torch.from_numpy(target_IRM.astype(np.float32)).clone()
+        # noise_IRM = torch.from_numpy(noise_IRM.astype(np.float32)).clone()
+
         return mixed_amp_spec, target_IRM, noise_IRM
+        # return mixed_log_spec, target_IRM, noise_IRM
 
 # trainデータとvalデータのファイルパスリストを取得
 def mk_datapath_list(dataset_dir):
@@ -446,12 +465,12 @@ if __name__ == '__main__':
     train_mixed_wav_list, train_target_wav_list, train_interference_wav_list, \
         val_mixed_wav_list, val_target_wav_list, val_interference_wav_list = mk_datapath_list(dataset_dir)
     # 前処理クラスのインスタンスを作成(numpy形式のスペクトログラムをpytorchのテンソルに変換する)
-    transform = AudioProcess(audio_length, sample_rate, fft_size, hop_length, model_type) 
+    transform = AudioProcess(sample_rate, fft_size, hop_length, model_type) 
     # データセットのインスタンスを作成
     train_dataset = IRMDataset(train_mixed_wav_list, train_target_wav_list, train_interference_wav_list, \
-        transform, model_type, sample_rate, num_channels, fft_size)
+        transform, model_type, audio_length, sample_rate, num_channels, fft_size)
     val_dataset = IRMDataset(val_mixed_wav_list, val_target_wav_list, val_interference_wav_list, \
-        transform, model_type, sample_rate, num_channels, fft_size)
+        transform, model_type, audio_length, sample_rate, num_channels, fft_size)
     # データローダーを作成
     train_dataloader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)

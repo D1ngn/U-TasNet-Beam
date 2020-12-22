@@ -6,3 +6,4 @@ output/
 eval_result/
 test/
 test.py
+inference_for_mask_display.py

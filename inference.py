@@ -66,10 +66,16 @@ if __name__ == '__main__':
     # target_voice_file = "./test/p232_016/p232_016_target.wav"
     # interference_audio_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
     # mixed_audio_file = "./test/p232_016/p232_016_mixed_azimuth45.wav"
+    # target_voice_file = "./test/p232_021/p232_021_target.wav"
+    # interference_audio_file = "./test/p232_021/p232_021_interference_azimuth15.wav"
+    # mixed_audio_file = "./test/p232_021/p232_021_mixed_azimuth15.wav"
     # 英語（女性）
     target_voice_file = "./test/p257_006/p257_006_target.wav"
     interference_audio_file = "./test/p257_006/p257_006_interference_azimuth60.wav"
     mixed_audio_file = "./test/p257_006/p257_006_mixed_azimuth60.wav"
+    # target_voice_file = "./test/p257_130/p257_130_target.wav"
+    # interference_audio_file = "./test/p257_130/p257_130_interference_azimuth0.wav"
+    # mixed_audio_file = "./test/p257_130/p257_130_mixed_azimuth0.wav"
     # 日本語（女性）
     # target_voice_file = "./test/JVS/BASIC5000_0145_target.wav"
     # interference_audio_file = "./test/JVS/BASIC5000_0145_interference.wav"
@@ -89,10 +95,12 @@ if __name__ == '__main__':
     # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_BLSTM_1202/ckpt_epoch80.pt" # BLSTM
     # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_FC_1202/ckpt_epoch80.pt" # FC
     # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1201/ckpt_epoch70.pt" # BLSTM small
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1211/ckpt_epoch80.pt" # BLSTM small2
     checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1208/ckpt_epoch110.pt" # U-Net aware channel←ベストモデル
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1211/ckpt_epoch160.pt" # U-Net aware channel2
     # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_median_1209/ckpt_epoch50.pt" # U-Net median operation
     # NoisySpeechDataset_for_unet_fft_512_multi_wav_1209で学習
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_logmel_BLSTM_1209/ckpt_epoch50.pt" # BLSTM-logmel
+    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_logmel_BLSTM_1209/ckpt_epoch100.pt" # BLSTM-logmel
     # マスク推定モデルのタイプを指定
     model_type = 'Unet' # 'FC' or 'BLSTM' or 'Unet'
     # ビームフォーマのタイプを指定
@@ -107,7 +115,7 @@ if __name__ == '__main__':
         model = UnetMaskEstimator_kernel3()
         pass
     # 前処理クラスのインスタンスを作成
-    transform = AudioProcess(audio_length, sample_rate, fft_size, hop_length, model_type)
+    transform = AudioProcess(sample_rate, fft_size, hop_length, model_type)
     # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("使用デバイス：" , device)
@@ -121,8 +129,11 @@ if __name__ == '__main__':
 
     # 処理の開始時間
     start_time = time.perf_counter()
+    # 音声データをロード
+    mixed_audio_data = load_audio_file(mixed_audio_file, audio_length, sample_rate)
+    """mixed_audio_data: (num_samples, num_channels)"""
     # マルチチャンネル音声データを複素スペクトログラムと振幅スペクトログラムに変換
-    mixed_complex_spec, mixed_amp_spec = transform(mixed_audio_file)
+    mixed_complex_spec, mixed_amp_spec = transform(mixed_audio_data)
     """mixed_complex_spec: (num_channels, freq_bins, time_steps), mixed_amp_spec: (num_channels, freq_bins, time_steps)"""
     # 振幅スペクトログラムを標準化
     mixed_amp_spec = standardize(mixed_amp_spec)
@@ -152,16 +163,16 @@ if __name__ == '__main__':
     """estimated_target_mask: (freq_bins, time_steps)"""
     estimated_noise_mask = estimated_noise_mask.squeeze(0)
     """estimated_noise_mask: (freq_bins, time_steps)"""
+    # pytorchのテンソルをnumpy形式のデータに変換
+    estimated_target_mask = estimated_target_mask.detach().numpy().copy() # CPU
+    estimated_noise_mask = estimated_noise_mask.detach().numpy().copy() # CPU
+    
     # U-Netの場合paddingされた分を削除する
     if model_type == 'Unet':
         # とりあえずハードコーディング TODO
         mixed_complex_spec = mixed_complex_spec[:, :, :301]
         estimated_target_mask = estimated_target_mask[:, :301] 
         estimated_noise_mask = estimated_noise_mask[:, :301]
-    
-    # pytorchのテンソルをnumpy形式のデータに変換
-    estimated_target_mask = estimated_target_mask.detach().numpy().copy() # CPU
-    estimated_noise_mask = estimated_noise_mask.detach().numpy().copy() # CPU
     # 目的音のマスクと雑音のマスクからそれぞれの空間共分散行列を推定
     target_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_target_mask)
     noise_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_noise_mask)
@@ -186,8 +197,6 @@ if __name__ == '__main__':
     """estimated_spec: (num_channels, freq_bins, time_frames)"""
 
     # マルチチャンネルスペクトログラムを音声波形に変換
-    mixed_audio_data = load_audio_file(mixed_audio_file, audio_length, sample_rate)
-    """mixed_audio_data: (num_samples, num_channels)"""
     multichannel_estimated_voice_data= np.zeros(mixed_audio_data.shape, dtype='float64') # マルチチャンネル音声波形を格納する配列
     # 1chごとスペクトログラムを音声波形に変換
     for i in range(estimated_spec.shape[0]):
