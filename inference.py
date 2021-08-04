@@ -12,9 +12,7 @@ import os
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-import librosa
-import wave
-import subprocess
+import argparse
 import time
 import soundfile as sf
 
@@ -40,16 +38,23 @@ from utils.utilities import AudioProcess, spec_plot, count_parameters, wave_plot
 
 
 def main():
-    # 各パラメータを設定
-    sample_rate = 16000 # 作成するオーディオファイルのサンプリング周波数を指定
-    # audio_length = 3 # 単位は秒(second) → fft_size=1024,hop_length=768のとき、audio_length=6が最適かも？
-    fft_size = 512 # 高速フーリエ変換のフレームサイズ
-    hop_length = 160 # 高速フーリエ変換におけるフレームのスライド幅
-    # マスクのチャンネルを指定（いずれはconfigまたはargsで指定）TODO
-    target_aware_channel = 0
-    noise_aware_channel = 4
-    # 音声をバッチ処理する際の1バッチ当たりのサンプル数
-    batch_length = 48000
+    # コマンドライン引数を受け取る
+    parser = argparse.ArgumentParser(description='Real time voice separation')
+    parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate') # サンプリング周波数
+    parser.add_argument('-bl', '--batch_length', type=int, default=48000, help='batch size of mask estimator and beamformer input') # 音声をバッチ処理する際の1バッチ当たりのサンプル数
+    parser.add_argument('-c', '--channels', type=int, default=8, help='number of input channels') # マイクのチャンネル数
+    parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform') # 高速フーリエ変換のフレームサイズ
+    parser.add_argument('-hl', '--hop_length', type=int, default=160, help='number of audio samples between adjacent STFT columns') # 高速フーリエ変換におけるフレームのスライド幅
+    parser.add_argument('-mt', '--model_type', type=str, default='Unet_single_mask', help='type of mask estimator model (FC or BLSTM or CNN or Unet or Unet_single_mask or Unet_single_mask_two_speakers)') # 雑音（残響除去）モデルのタイプ
+    parser.add_argument('-sst', '--speaker_separator_type', type=str, default='conv_tasnet', help='type of speaker separator model (conv_tasnet)') # 話者分離モデルのタイプ
+    parser.add_argument('-bt', '--beamformer_type', type=str, default='MVDR', help='type of beamformer (DS or MVDR or GEV or MWF)') # ビームフォーマのタイプ
+    parser.add_argument('-dt', '--dereverb_type', type=str, default='None', help='type of dereverb algorithm (None or WPE)') # 残響除去手法のタイプ
+    parser.add_argument('-ep', '--embedder_path', type=str, default="./utils/embedder.pt", help='path of pretrained embedder model') # 話者識別用の学習済みモデルのパス
+    parser.add_argument('-rsp', '--ref_speech_path', type=str, default="./utils/ref_speech/sample.wav", help='path of reference speech') # 声を抽出したい人の発話サンプルのパス
+    parser.add_argument('-tac', '--target_aware_channel', type=int, default=0, help='microphone channel near target source') # 目的音に関するマスクのチャンネル
+    parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source') # 雑音に関するマスクのチャンネル
+    args = parser.parse_args()
+
     # 処理後の音声の振幅の最大値を処理前の混合音声の振幅の最大値に合わせる（True）か否か（False）
     fit_max_value = False 
     
@@ -110,7 +115,6 @@ def main():
     # interference_audio_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0034.wav"
     # mixed_audio_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0001_BASIC5000_034_mixed.wav"
 
-
     wave_dir = "./output/wave/"
     os.makedirs(wave_dir, exist_ok=True)
     # オーディオファイルに対応する音声の波形を保存
@@ -140,53 +144,37 @@ def main():
     # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_single_mask_median_20210315/ckpt_epoch170.pt" # U-Net-single-mask small data  (best model)
     checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_Unet_single_mask_median_multisteplr00001start_20210701/ckpt_epoch190.pt" # U-Net-single-mask small data (newest model)
 
-
-    # 「https://huggingface.co/models?filter=asteroid」にある話者分離用の学習済みモデルを指定
-    # pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepclean_16k" # ConvTasNet 16kHz
-    pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepnoisy_16k" # ConvTasNet 16kHz noisy ← こっちの方が精度が高そう
-    # 話者識別用の学習済みモデルのパス
-    embedder_path = "./utils/embedder.pt"
-    # 声を抽出したい人の発話サンプルのパス
-    ref_speech_path = "./test/p232_123/p232_123_target.wav"
-
-    # マスク推定モデルのタイプを指定
-    model_type = 'Unet_single_mask' # 'FC' or 'BLSTM' or 'Unet' or 'Unet_single_mask' or 'Unet_single_mask_two_speakers'
-    # ビームフォーマのタイプを指定
-    beamformer_type = 'MVDR' # 'DS' or 'MVDR' or 'GEV', or 'MWF' or 'Sparse'
-    # 残響除去手法の種類を指定
-    dereverb_type = None # None or 'WPE' or 'WPD'
-
     # 音声認識結果を保存するディレクトリを指定
-    recog_result_dir = "./recog_result/{}_{}_{}_dereverb_type_{}/".format(target_voice_file.split('/')[-2], model_type, beamformer_type, str(dereverb_type))
+    recog_result_dir = "./recog_result/{}_{}_{}_dereverb_type_{}/".format(target_voice_file.split('/')[-2], args.model_type, args.beamformer_type, str(args.dereverb_type))
     os.makedirs(recog_result_dir, exist_ok=True)
 
     # ネットワークモデルの定義、チャンネルの選び方の指定、モデル入力時にパディングを行うか否かを指定
-    if model_type == 'BLSTM':
+    if args.model_type == 'BLSTM':
         model = BLSTMMaskEstimator()
         channel_select_type = 'median'
         padding = False
-    elif model_type == 'FC':
+    elif args.model_type == 'FC':
         model = FCMaskEstimator()
         channel_select_type = 'aware'
         padding = False
-    elif model_type == 'CNN':
+    elif args.model_type == 'CNN':
         model = CNNMaskEstimator_kernel3()
         channel_select_type = 'aware'
         padding = True
-    elif model_type == 'Unet':
+    elif args.model_type == 'Unet':
         model = UnetMaskEstimator_kernel3()
         channel_select_type = 'aware'
         padding = True
-    elif model_type == 'Unet_single_mask':
+    elif args.model_type == 'Unet_single_mask':
         model = UnetMaskEstimator_kernel3_single_mask()
         channel_select_type = 'single'
         padding = True
-    elif model_type == 'Unet_single_mask_two_speakers':
+    elif args.model_type == 'Unet_single_mask_two_speakers':
         model = UnetMaskEstimator_kernel3_single_mask_two_speakers()
         channel_select_type = 'single'
         padding = True
     # 音声処理クラスのインスタンスを作成
-    audio_processor = AudioProcess(sample_rate, fft_size, hop_length, channel_select_type, padding)
+    audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
     # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("使用デバイス：" , device)
@@ -200,16 +188,25 @@ def main():
     # 音声認識用のインスタンスを生成
     asr_ins = ASR(lang='eng')
     # 話者分離モデルの学習済みパラメータをダウンロード
-    speaker_separation_model = BaseModel.from_pretrained(pretrained_param_speaker_separation)
+    if args.speaker_separator_type == 'conv_tasnet':
+        # 「https://huggingface.co/models?filter=asteroid」にある話者分離用の学習済みモデルを指定
+        # pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepclean_16k" # ConvTasNet 16kHz
+        pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepnoisy_16k" # ConvTasNet 16kHz noisy ← こっちの方が精度が高そう
+        speaker_separation_model = BaseModel.from_pretrained(pretrained_param_speaker_separation)
+    else:
+        print("Please specify the correct speaker separator type")
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
-    embed_params = torch.load(embedder_path, map_location=device)
+    embed_params = torch.load(args.embedder_path, map_location=device)
     embedder.load_state_dict(embed_params)
     embedder.eval()
     # 声を分離抽出したい人の発話サンプルをロードし、評価用に保存
-    ref_speech_data, _ = sf.read(ref_speech_path)
-    ref_speech_path = os.path.join(wave_dir, "reference_voice.wav")
-    sf.write(ref_speech_path, ref_speech_data, sample_rate)
+    ref_speech_data, _ = sf.read(args.ref_speech_path)
+    # シングルチャンネル音声の場合はチャンネルの次元を追加
+    if ref_speech_data.ndim == 1:
+        ref_speech_data = ref_speech_data[:, np.newaxis]
+    ref_speech_save_path = os.path.join(wave_dir, "reference_voice.wav")
+    sf.write(ref_speech_save_path, ref_speech_data, args.sample_rate)
     # 発話サンプルの特徴量（ログメルスペクトログラム）をベクトルに変換
     ref_complex_spec = audio_processor.calc_complex_spec(ref_speech_data)
     ref_log_mel_spec = audio_processor.calc_log_mel_spec(ref_complex_spec)
@@ -231,19 +228,19 @@ def main():
     """mixed_complex_spec: (num_channels, freq_bins, time_frames)"""
 
     # 残響除去手法を指定している場合は残響除去処理を実行
-    if dereverb_type == 'WPE':
+    if args.dereverb_type == 'WPE':
         mixed_complex_spec, _ = audio_processor.dereverberation_wpe_multi(mixed_complex_spec)
         
     # モデルに入力できるように音声をミニバッチに分けながら振幅スペクトログラムに変換
-    mixed_amp_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data, batch_length)
+    mixed_amp_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data, args.batch_length)
     """mixed_amp_spec_batch: (batch_size, num_channels, freq_bins, time_frames)"""
     # 発話とそれ以外の雑音の時間周波数マスクを推定
     speech_mask_output, noise_mask_output = model(mixed_amp_spec_batch)
     """speech_mask_output: (batch_size, num_channels, freq_bins, time_frames), noise_mask_output: (batch_size, num_channels, freq_bins, time_frames)"""
     # ミニバッチに分けられたマスクを時間方向に結合し、混合音にかけて各音源のスペクトログラムを取得
-    multichannel_speech_spec, _ = audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_mask_output, batch_length, target_aware_channel)
+    multichannel_speech_spec, _ = audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_mask_output, args.batch_length, args.target_aware_channel)
     """multichannel_speech_spec: (num_channels, freq_bins, time_frames)"""
-    multichannel_noise_spec, estimated_noise_mask = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_mask_output, batch_length, noise_aware_channel)
+    multichannel_noise_spec, estimated_noise_mask = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_mask_output, args.batch_length, args.noise_aware_channel)
     """multichannel_noise_spec: (num_channels, freq_bins, time_frames)"""
     # 発話のマルチチャンネルスペクトログラムを音声波形に変換
     multichannel_denoised_data = audio_processor.spec_to_wave(multichannel_speech_spec, mixed_audio_data)
@@ -263,7 +260,7 @@ def main():
     # print("ID of the target speaker:", target_speaker_id)
     # finish_time_speeaker_selector = time.perf_counter()
     # duration_speeaker_selector = finish_time_speeaker_selector - start_time_speeaker_selector
-    # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / sample_rate)
+    # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / args.sample_rate)
     # print("実時間比（Speaker Selector）：{:.3f}".format(rtf))
 
     # 雑音の振幅スペクトログラムを算出
@@ -284,8 +281,8 @@ def main():
     # 複数チャンネルのうち1チャンネル分のマスクを算出
     if channel_select_type == 'aware':
         # 目的音と干渉音に近いチャンネルのマスクをそれぞれ使用（選択するチャンネルを変えて実験してみるのもあり）
-        estimated_target_mask = estimated_target_mask[target_aware_channel, :, :]
-        estimated_interference_mask = estimated_interference_mask[noise_aware_channel, :, :]
+        estimated_target_mask = estimated_target_mask[args.target_aware_channel, :, :]
+        estimated_interference_mask = estimated_interference_mask[args.noise_aware_channel, :, :]
     elif channel_select_type == 'median' or channel_select_type == 'single':
         # 複数チャンネル間のマスク値の中央値をとる（median pooling）
         estimated_target_mask = np.median(estimated_target_mask, axis=0)
@@ -299,19 +296,19 @@ def main():
     noise_covariance_matrix = condition_covariance(noise_covariance_matrix, 1e-6) # これがないと性能が大きく落ちる（雑音の共分散行列がスパースであるため？）
     # noise_covariance_matrix /= np.trace(noise_covariance_matrix, axis1=-2, axis2=-1)[..., None, None]
     # ビームフォーマによる雑音除去を実行
-    if beamformer_type == 'MVDR':
+    if args.beamformer_type == 'MVDR':
         # target_steering_vectors = estimate_steering_vector(target_covariance_matrix)
         # estimated_spec = mvdr_beamformer(mixed_complex_spec, target_steering_vectors, noise_covariance_matrix)
         estimated_target_spec = mvdr_beamformer_two_speakers(mixed_complex_spec, target_covariance_matrix, interference_covariance_matrix, noise_covariance_matrix)
         # estimated_interference_spec = mvdr_beamformer_two_speakers(mixed_complex_spec, interference_covariance_matrix, target_covariance_matrix, noise_covariance_matrix)
-    elif beamformer_type == 'GEV':
+    elif args.beamformer_type == 'GEV':
         estimated_target_spec = gev_beamformer(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
-    elif beamformer_type == "DS":
+    elif args.beamformer_type == "DS":
         target_steering_vectors = estimate_steering_vector(target_covariance_matrix)
         estimated_target_spec = ds_beamformer(mixed_complex_spec, target_steering_vectors)
-    elif beamformer_type == "MWF":
+    elif args.beamformer_type == "MWF":
         estimated_target_spec = mwf(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
-    elif beamformer_type == 'Sparse':
+    elif args.beamformer_type == 'Sparse':
         estimated_target_spec = sparse(mixed_complex_spec, estimated_target_mask) # マスクが正常に推定できているかどうかをテストする用
     else:
         print("Please specify the correct beamformer type")
@@ -332,33 +329,33 @@ def main():
     process_time = finish_time - start_time
     print("処理時間：{:.3f}sec".format(process_time))
     # 実時間比（Real Time Factor）
-    rtf = process_time / (mixed_audio_data.shape[0] / sample_rate)
+    rtf = process_time / (mixed_audio_data.shape[0] / args.sample_rate)
     print("実時間比：{:.3f}".format(rtf))
 
     # オーディオデータを保存
     estimated_target_voice_path = os.path.join(wave_dir, "estimated_target_voice.wav")
-    sf.write(estimated_target_voice_path, multichannel_estimated_target_voice_data, sample_rate)
+    sf.write(estimated_target_voice_path, multichannel_estimated_target_voice_data, args.sample_rate)
     # estimated_interference_voice_path = os.path.join(wave_dir, "estimated_interference_voice.wav")
-    # sf.write(estimated_interference_voice_path, multichannel_estimated_interference_voice_data, sample_rate)
+    # sf.write(estimated_interference_voice_path, multichannel_estimated_interference_voice_data, args.sample_rate)
     # 雑音除去後の混合音を保存
     denoised_voice_path = os.path.join(wave_dir, "denoised_voice.wav")
-    sf.write(denoised_voice_path, multichannel_denoised_data, sample_rate)
+    sf.write(denoised_voice_path, multichannel_denoised_data, args.sample_rate)
     # デバッグ用に元のオーディオデータとそのスペクトログラムを保存
     # 目的話者の発話
     target_voice_path = os.path.join(wave_dir, "target_voice.wav")
     target_voice_data, _ = sf.read(target_voice_file)
-    sf.write(target_voice_path, target_voice_data, sample_rate)
+    sf.write(target_voice_path, target_voice_data, args.sample_rate)
     # 干渉話者の発話
     interference_audio_path = os.path.join(wave_dir, "interference_audio.wav")
     interference_audio_data, _ = sf.read(interference_audio_file)
-    sf.write(interference_audio_path, interference_audio_data, sample_rate)
+    sf.write(interference_audio_path, interference_audio_data, args.sample_rate)
     # 雑音
     noise_path = os.path.join(wave_dir, "noise.wav")
     noise_data, _ = sf.read(noise_file)
-    sf.write(noise_path, noise_data, sample_rate)
+    sf.write(noise_path, noise_data, args.sample_rate)
     # 混合音声
     mixed_audio_path = os.path.join(wave_dir, "mixed_audio.wav")
-    sf.write(mixed_audio_path, mixed_audio_data, sample_rate)
+    sf.write(mixed_audio_path, mixed_audio_data, args.sample_rate)
 
     # 音声の波形を画像として保存（マルチチャンネル未対応）
     # 目的話者の発話の波形
@@ -375,7 +372,7 @@ def main():
     wave_plot(estimated_target_voice_path, estimated_voice_img_path, ylim_min=-1.0, ylim_max=1.0)
     # 目的話者の発話サンプルの波形
     ref_speech_img_path = os.path.join(wave_image_dir, "ref_speech.png")
-    wave_plot(ref_speech_path, ref_speech_img_path, ylim_min=-1.0, ylim_max=1.0)
+    wave_plot(args.ref_speech_path, ref_speech_img_path, ylim_min=-1.0, ylim_max=1.0)
     # 混合音声の波形
     mixed_audio_img_path = os.path.join(wave_image_dir, "mixed_audio.png")
     wave_plot(mixed_audio_path, mixed_audio_img_path, ylim_min=-1.0, ylim_max=1.0)
@@ -398,7 +395,7 @@ def main():
 
     # 音声評価
     sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = \
-        audio_eval(sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_target_voice_path)
+        audio_eval(args.sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_target_voice_path)
     # 音声認識性能の評価
     # 音声認識を実行
     target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
