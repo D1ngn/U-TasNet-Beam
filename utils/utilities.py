@@ -451,6 +451,27 @@ def spec_plot(base_dir, wav_path, save_path):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+
+# Juliusを用いた音声認識
+def asr_julius(input_file_path):
+    # save_path = "~/julius/dictation-kit-4.5/recog_result.txt"
+    temp_file = "julius_asr_recog_result.txt"
+    # juliusによる音声認識を実行し、結果をファイルに出力
+    # 混合ガウスモデル（GMM）ベースの音響モデルを用いる場合→今は「前に進め」、「後ろに退がれ」など（オリジナルの単語辞書に登録されたもの）を認識
+    asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-gmm.jconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
+    # # DNNベースの音響モデルを用いる場合→今はさまざまな日本語を認識（英語は不可）
+    # asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf ~/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input rawfile -quiet > {}".format(input_file_path, save_path)
+    subprocess.call(asr_cmd, shell=True)
+    # 出力ファイルから認識結果の部分のみを抽出
+    with open(temp_file) as f:
+        lines = f.readlines()
+    recog_text_line = [line.strip() for line in lines if line.startswith('sentence1')] # "sentence1"から始まる行をサーチ
+    recog_result = recog_text_line[0][12:-2] # "sentence1: "から"。"の間の文章を抽出
+    # 余分なファイルが残らないように削除
+    os.remove(temp_file)
+    return recog_result
+
+
 if __name__ == "__main__":
 
     # audio_path = "./data/1-155858-E-25.wav"
@@ -502,47 +523,49 @@ if __name__ == "__main__":
     # """mulichannel_complex_spec: (num_channels=8, freq_bins=257, time_frames=301)"""
     # print(mulichannel_complex_spec.shape)
 
-    # 残響除去テスト
-    # マスク推定モデルのタイプを指定
-    # model_type = 'Unet' # 'FC' or 'BLSTM' or 'Unet'
-    # # 残響除去手法のタイプを指定
-    # dereverb_type = 'WPE' # None or 'WPE' or 'WPD'
-    # 前処理クラスのインスタンスを作成
-    transform = AudioProcess(sample_rate, fft_size, hop_length)
-    # 目的音のファイルパス
-    target_voice_file = "./test/p232_021_rt0162/p232_021_target.wav"
-    # target_voice_file = "./test/p232_021_rt0162/p232_021_mixed_azimuth60.wav"
-    # 音声データをロード
-    target_audio_data = load_audio_file(target_voice_file, audio_length, sample_rate)
-    """target_audio_data: (num_samples, num_channels)"""
-    # 処理の開始時間
-    start_time = time.perf_counter()
-    # マルチチャンネル音声データを複素スペクトログラムと振幅スペクトログラムに変換（残響除去も実施）
-    estimated_complex_spec, estimated_amp_spec = transform(target_audio_data)
-    """estimated_complex_spec: (num_channels, freq_bins, time_frames), estimated_amp_spec: (num_channels, freq_bins, time_frames)"""
-    estimated_complex_spec = estimated_complex_spec[:, :, :301]
-    # マルチチャンネルスペクトログラムを音声波形に変換
-    multichannel_estimated_voice_data= np.zeros(target_audio_data.shape, dtype='float64') # マルチチャンネル音声波形を格納する配列
-    # 1chごとスペクトログラムを音声波形に変換
-    for i in range(estimated_complex_spec.shape[0]):
-        # estimated_voice_data = spec_to_wave(estimated_spec[i, :, :], hop_length)
-        estimated_voice_data = librosa.core.istft(estimated_complex_spec[i, :, :], hop_length=hop_length)
-        multichannel_estimated_voice_data[:, i] = estimated_voice_data
-    """multichannel_estimated_voice_data: (num_samples, num_channels)"""
-    # 処理の終了時間
-    finish_time = time.perf_counter()
-    print("処理時間：", finish_time - start_time)
-    # オーディオデータを保存
-    estimated_voice_path = os.path.join("./output/wave/", "estimated_voice.wav")
-    save_audio_file(estimated_voice_path, multichannel_estimated_voice_data)
-    # オリジナル音声
-    target_voice_path = os.path.join("./output/wave/", "target_voice.wav")
-    target_voice_data = load_audio_file(target_voice_file, audio_length, sample_rate)
-    save_audio_file(target_voice_path, target_audio_data)
-    # 分離音のスペクトログラム
-    estimated_voice_spec_path = os.path.join("./output/spectrogram/", "estimated_voice.png")
-    spec_plot(os.getcwd(), estimated_voice_path, estimated_voice_spec_path, audio_length)
-    # オリジナル音声のスペクトログラム
-    target_voice_spec_path = os.path.join("./output/spectrogram/", "target_voice.png")
-    spec_plot(os.getcwd(), target_voice_file, target_voice_spec_path, audio_length)
+    # # 残響除去テスト
+    # # マスク推定モデルのタイプを指定
+    # # model_type = 'Unet' # 'FC' or 'BLSTM' or 'Unet'
+    # # # 残響除去手法のタイプを指定
+    # # dereverb_type = 'WPE' # None or 'WPE' or 'WPD'
+    # # 前処理クラスのインスタンスを作成
+    # transform = AudioProcess(sample_rate, fft_size, hop_length)
+    # # 目的音のファイルパス
+    # target_voice_file = "./test/p232_021_rt0162/p232_021_target.wav"
+    # # target_voice_file = "./test/p232_021_rt0162/p232_021_mixed_azimuth60.wav"
+    # # 音声データをロード
+    # target_audio_data = load_audio_file(target_voice_file, audio_length, sample_rate)
+    # """target_audio_data: (num_samples, num_channels)"""
+    # # 処理の開始時間
+    # start_time = time.perf_counter()
+    # # マルチチャンネル音声データを複素スペクトログラムと振幅スペクトログラムに変換（残響除去も実施）
+    # estimated_complex_spec, estimated_amp_spec = transform(target_audio_data)
+    # """estimated_complex_spec: (num_channels, freq_bins, time_frames), estimated_amp_spec: (num_channels, freq_bins, time_frames)"""
+    # estimated_complex_spec = estimated_complex_spec[:, :, :301]
+    # # マルチチャンネルスペクトログラムを音声波形に変換
+    # multichannel_estimated_voice_data= np.zeros(target_audio_data.shape, dtype='float64') # マルチチャンネル音声波形を格納する配列
+    # # 1chごとスペクトログラムを音声波形に変換
+    # for i in range(estimated_complex_spec.shape[0]):
+    #     # estimated_voice_data = spec_to_wave(estimated_spec[i, :, :], hop_length)
+    #     estimated_voice_data = librosa.core.istft(estimated_complex_spec[i, :, :], hop_length=hop_length)
+    #     multichannel_estimated_voice_data[:, i] = estimated_voice_data
+    # """multichannel_estimated_voice_data: (num_samples, num_channels)"""
+    # # 処理の終了時間
+    # finish_time = time.perf_counter()
+    # print("処理時間：", finish_time - start_time)
+    # # オーディオデータを保存
+    # estimated_voice_path = os.path.join("./output/wave/", "estimated_voice.wav")
+    # save_audio_file(estimated_voice_path, multichannel_estimated_voice_data)
+    # # オリジナル音声
+    # target_voice_path = os.path.join("./output/wave/", "target_voice.wav")
+    # target_voice_data = load_audio_file(target_voice_file, audio_length, sample_rate)
+    # save_audio_file(target_voice_path, target_audio_data)
+    # # 分離音のスペクトログラム
+    # estimated_voice_spec_path = os.path.join("./output/spectrogram/", "estimated_voice.png")
+    # spec_plot(os.getcwd(), estimated_voice_path, estimated_voice_spec_path, audio_length)
+    # # オリジナル音声のスペクトログラム
+    # target_voice_spec_path = os.path.join("./output/spectrogram/", "target_voice.png")
+    # spec_plot(os.getcwd(), target_voice_file, target_voice_spec_path, audio_length)
 
+    # Juliusによる音声認識テスト
+    ASR_julius("./ref_speech/sample_jp_16kHz.wav")

@@ -28,6 +28,9 @@ from utils.embedder import SpeechEmbedder
 # 音源分離用モジュール 
 from asteroid.models import BaseModel
 
+# sys.path.append('..')
+# from MyLibrary.MyFunc import ASR
+
 def int_or_str(text):
     """Helper function for argument parsing."""
     try:
@@ -218,6 +221,8 @@ if __name__ == "__main__":
     # Unetを使って推論
     # ネットワークを推論モードへ
     model.eval()
+    # # 音声認識用のインスタンスを生成
+    # asr_ins = ASR(lang='eng')
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
     embed_params = torch.load(args.embedder_path, map_location=device)
@@ -253,6 +258,9 @@ if __name__ == "__main__":
                     file.write(q.get())
     except KeyboardInterrupt:
         print('\nRecording finished: ' + repr(estimated_voice_path))
+        # # 音声認識を実行
+        # target_voice_recog_text = asr_ins.speech_recognition(file) # （例） IT IS MARVELLOUS
+        # print(target_voice_recog_text)
         parser.exit(0)
     except Exception as e:
         parser.exit(type(e).__name__ + ': ' + str(e))
