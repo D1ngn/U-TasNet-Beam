@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# 必要モジュールのimport
+# torch関連のモジュールのimport
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
-
+# その他必要モジュールのimport
 import os
 import glob
 import numpy as np
@@ -15,26 +15,20 @@ import matplotlib.pyplot as plt
 import argparse
 import time
 import soundfile as sf
+from natsort import natsorted
+from tqdm import tqdm
 
 # WARNINGの表示を全て消す場合
 import warnings
 warnings.simplefilter('ignore')
 
-from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, CNNMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask, UnetMaskEstimator_kernel3_single_mask_two_speakers
-from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, sparse, ds_beamformer, mwf
-# 話者識別用モデル
-from utils.embedder import SpeechEmbedder
-# 音源分離用モジュール 
-from asteroid.models import BaseModel
-
-from natsort import natsorted
-from tqdm import tqdm
-
-# 音声処理用
-import sys
-sys.path.append('..')
-from MyLibrary.MyFunc import audio_eval, ASR, asr_eval
-from utils.utilities import AudioProcess, spec_plot, count_parameters, wave_plot
+from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, CNNMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask, UnetMaskEstimator_kernel3_single_mask_two_speakers # 雑音・残響除去モデル各種
+from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, sparse, ds_beamformer, mwf # ビームフォーマ各種
+from utils.utilities import AudioProcess, spec_plot, count_parameters, wave_plot # 音声処理用
+from utils.embedder import SpeechEmbedder # 話者識別用
+from utils.evaluate import audio_eval, asr_eval # 評価用
+from utils.asr import ASR # 音声認識用
+from asteroid.models import BaseModel # 音源分離用
 
 
 def main():
@@ -404,6 +398,13 @@ def main():
     mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
     estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
     estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
+    # # Juliusを用いる場合（日本語のみに対応）
+    # target_voice_recog_text = asr_julius(target_voice_path) # （例） IT IS MARVELLOUS
+    # target_voice_recog_text = target_voice_recog_text.split() # （例） ['IT', 'IS', 'MARVELLOUS']
+    # mixed_audio_recog_text = asr_julius(mixed_audio_path)
+    # mixed_audio_recog_text = mixed_audio_recog_text.split()
+    # estimated_voice_recog_text = asr_julius(estimated_target_voice_path)
+    # estimated_voice_recog_text = estimated_voice_recog_text.split()
     # ファイル名を取得
     file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
     # 正解ラベルを読み込む
