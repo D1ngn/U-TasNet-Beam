@@ -35,6 +35,8 @@ evaluate_mask_beamformer_azimuth_wise.ipynb
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data.ipynb
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR.ipynb
 
+julius_asr_recog_result.txt
+
 torchvision/
 torch-1.8.0-cp36-cp36m-linux_aarch64.whl
 .python-version

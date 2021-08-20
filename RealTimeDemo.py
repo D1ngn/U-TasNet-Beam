@@ -7,11 +7,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
+# from torch2trt import torch2trt # Xavier上で動かす場合のみ
 
 import os
 import sys
 import numpy as np
-import pyaudio
 import argparse
 import time as tm
 import queue
@@ -64,7 +64,7 @@ def worker(mixed_audio_data):
         if args.dereverb_type == 'WPE':
             mixed_complex_spec, _ = audio_processor.dereverberation_wpe_multi(mixed_complex_spec)       
         # モデルに入力できるように音声をミニバッチに分けながら振幅スペクトログラムに変換
-        mixed_amp_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data, args.chunk_size)
+        mixed_amp_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data, args.chunk_size, device=device)
         """mixed_amp_spec_batch: (batch_size, num_channels, freq_bins, time_frames)"""
         # 発話とそれ以外の雑音の時間周波数マスクを推定
         speech_mask_output, noise_mask_output = model(mixed_amp_spec_batch)
@@ -85,7 +85,7 @@ def worker(mixed_audio_data):
         """separated_audio_data: (num_sources, num_samples, num_channels)"""
         # start_time_speeaker_selector = time.perf_counter()
         # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断）
-        target_speaker_id, speech_amp_spec_all = audio_processor.speaker_selector(embedder, separated_audio_data, ref_dvec)
+        target_speaker_id, speech_amp_spec_all = audio_processor.speaker_selector(embedder, separated_audio_data, ref_dvec, device=device)
         """speech_amp_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""
         # print("ID of the target speaker:", target_speaker_id)
         # finish_time_speeaker_selector = time.perf_counter()
@@ -176,6 +176,10 @@ if __name__ == "__main__":
     parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source')
     args = parser.parse_args()
 
+    # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("使用デバイス：" , device)
+
     wave_dir = "./audio_data/rec/"
     os.makedirs(wave_dir, exist_ok=True)
     estimated_voice_path = os.path.join(wave_dir, "record.wav")
@@ -203,6 +207,21 @@ if __name__ == "__main__":
     else:
         pass
 
+    # 前処理クラスのインスタンスを作成
+    audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+    
+    # ネットワークをCPUまたはGPUへ
+    model.to(device)
+    # 学習済みのパラメータをロード
+    model_params = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(model_params['model_state_dict'])
+    # Unetを使って推論
+    # ネットワークを推論モードへ
+    model.eval()
+    # # 入力サンプルとともにTensorRTに変換
+    # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513)).to(device)
+    # model = torch2trt(model, [tmp])
+    # model = torch2trt(model, [tmp], fp16_mode=True) # 精度によってモード切り替え
     # 話者分離モデルを指定
     if args.speaker_separator_type == 'conv_tasnet':
         # pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepclean_16k" # ConvTasNet 16kHz
@@ -210,21 +229,12 @@ if __name__ == "__main__":
         # 話者分離モデルの学習済みパラメータをダウンロード
         speaker_separation_model = BaseModel.from_pretrained(pretrained_param_speaker_separation)
     # elif args.speaker_separator_type == 'sepformer':
-    # 前処理クラスのインスタンスを作成
-    audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print("使用デバイス：" , device)
-    # 学習済みのパラメータをロード
-    model_params = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(model_params['model_state_dict'])
-    # Unetを使って推論
-    # ネットワークを推論モードへ
-    model.eval()
+    speaker_separation_model.to(device)
     # # 音声認識用のインスタンスを生成
     # asr_ins = ASR(lang='eng')
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
+    embedder.to(device)
     embed_params = torch.load(args.embedder_path, map_location=device)
     embedder.load_state_dict(embed_params)
     embedder.eval()
@@ -235,10 +245,8 @@ if __name__ == "__main__":
         ref_speech_data = ref_speech_data[:, np.newaxis]
     ref_complex_spec = audio_processor.calc_complex_spec(ref_speech_data)
     ref_log_mel_spec = audio_processor.calc_log_mel_spec(ref_complex_spec)
-    ref_log_mel_spec = torch.from_numpy(ref_log_mel_spec).float()
+    ref_log_mel_spec = torch.from_numpy(ref_log_mel_spec).float().to(device)
     ref_dvec = embedder(ref_log_mel_spec[0]) # 入力は1ch分
-    # PyTorchのテンソルからnumpy配列に変換
-    ref_dvec = ref_dvec.detach().numpy().copy() # CPU
     """ref_dvec: (embed_dim=256,)"""
 
     # 録音

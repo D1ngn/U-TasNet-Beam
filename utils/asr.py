@@ -37,7 +37,7 @@ def asr_julius(input_file_path):
     # # 混合ガウスモデル（GMM）ベースの音響モデルを用いる場合→今は「前に進め」、「後ろに退がれ」など（オリジナルの単語辞書に登録されたもの）を認識
     # asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-gmm.jconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
     # DNNベースの音響モデルを用いる場合→今はさまざまな日本語を認識（英語は不可）
-    asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf ~/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input rawfile -quiet > {}".format(input_file_path, save_path)
+    asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf ~/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
     subprocess.call(asr_cmd, shell=True)
     # 出力ファイルから認識結果の部分のみを抽出
     with open(temp_file) as f:

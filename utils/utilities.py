@@ -1,6 +1,7 @@
 # 必要モジュールのimport
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import os
 import numpy as np
 import matplotlib as mpl
@@ -130,7 +131,7 @@ class AudioProcess():
         return separated_audio_data
 
     # 分離された発話のうちどれが目的話者の発話かを判断
-    def speaker_selector(self, embedder, multiple_speech_data, ref_dvec):
+    def speaker_selector(self, embedder, multiple_speech_data, ref_dvec, device='cpu'):
         """
         embedder: 話者識別モデル
         multiple_speech_data: 複数の発話を含んだ音声データ (num_sources, num_samples, num_channels)
@@ -156,14 +157,12 @@ class AudioProcess():
             speech_log_mel_spec = self.calc_log_mel_spec(speech_complex_spec)
             """speech_log_mel_spec: (num_channels, num_mels, time_frames)"""
             # numpy配列からPyTorchのテンソルに変換
-            speech_log_mel_spec = torch.from_numpy(speech_log_mel_spec.astype(np.float32)).clone()
+            speech_log_mel_spec = torch.from_numpy(speech_log_mel_spec.astype(np.float32)).clone().to(device)
             # 発話の特徴量をベクトルに変換
             speech_dvec = embedder(speech_log_mel_spec[0]) # 入力は1ch分
-            # PyTorchのテンソルからnumpy配列に変換
-            speech_dvec = speech_dvec.detach().numpy().copy() # CPU
             """speech_dvec: (embed_dim=256,)"""
             # 分離音の埋め込みベクトルと発話サンプルの埋め込みベクトルのコサイン類似度を計算
-            cos_similarity = np.dot(speech_dvec, ref_dvec) / (np.linalg.norm(speech_dvec)*np.linalg.norm(ref_dvec))
+            cos_similarity = F.cosine_similarity(speech_dvec, ref_dvec, dim=0)
             # コサイン類似度が最大となる発話を目的話者の発話と判断
             if max_cos_similarity < cos_similarity:
                 max_cos_similarity = cos_similarity
@@ -241,7 +240,7 @@ class AudioProcess():
         return complex_spec_dereverb, cost_buff
     
     # 音声をミニバッチに分けながら振幅スペクトログラムに変換（サンプル数から1を引いているのは2バッチ目以降のサンプル数が0になるのを防ぐため）
-    def preprocess_mask_estimator(self, audio_data, batch_length):
+    def preprocess_mask_estimator(self, audio_data, batch_length, device='cpu'):
         batch_size = (audio_data.shape[0] - 1) // batch_length + 1 # （例） 3秒（48000サンプル）ごとに分ける場合72000のだとバッチサイズは2
         for batch_idx in range(batch_size):
             # 音声をミニバッチに分ける
@@ -253,7 +252,7 @@ class AudioProcess():
             # 振幅スペクトログラムを標準化
             amp_spec_partial = self.standardize(amp_spec_partial)
             # numpy形式のデータをpytorchのテンソルに変換
-            amp_spec_partial = torch.from_numpy(amp_spec_partial.astype(np.float32)).clone()
+            amp_spec_partial = torch.from_numpy(amp_spec_partial.astype(np.float32)).clone().to(device)
             # 振幅スペクトログラムをバッチ方向に結合
             if batch_idx == 0:
                 amp_spec_batch = amp_spec_partial.unsqueeze(0)
@@ -298,7 +297,7 @@ class AudioProcess():
         # 時間方向の長さを元に戻す
         mask = mask[:, :mixed_complex_spec.shape[2]]
         # pytorchのテンソルをnumpy形式のデータに変換
-        mask = mask.detach().numpy().copy() # CPU
+        mask = mask.to('cpu').detach().numpy().copy() # CPU
         # マスクを混合音声に掛けてスペクトログラムを抽出
         estimated_spec = mask[np.newaxis, :, :] * mixed_complex_spec
         """multichannel_speech_spec: (num_channels, freq_bins, time_frames)"""

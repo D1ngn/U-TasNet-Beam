@@ -1,0 +1,10 @@
+asteroid==0.4.1
+Cython==0.29.24
+espnet=0.9.9
+espnet-model-zoo==0.0.0a30
+librosa==0.8.1
+matplotlib==3.3.4
+numpy==1.9.4
+seaborn==0.11.1
+sounddevice==0.4.2
+SoundFile==0.10.3.post1

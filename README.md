@@ -13,7 +13,7 @@ PyTorch implementation of "Adaptation of robots to the real environment by simul
 
 ## Dependencies
 
-This code was tested on Python 3.6 with PyTorch 1.8.1.
+This code was tested on Python 3.6 with PyTorch 1.8 and torchvision 0.9.0.
 
 ```
 $ pip3 install -r requirements.txt
@@ -116,7 +116,12 @@ $ python3 training.py
    **Option**
 
    - `-dm` : whether model denoises audio or not
-   - `-d` : 
+   - `-d` : input device (numeric ID or substring) (you can check ID by running following commands)
+      ```
+      $ python3 
+      >>> import sounddevice
+      >>> sounddevice.query_devices()
+      ```   
    -  
 
 
