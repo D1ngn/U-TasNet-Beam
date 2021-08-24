@@ -3,17 +3,6 @@
 # Julius web server (with CherryPy:http://www.cherrypy.org/)
 # written by Ryota NISHIMURA 2015/Dec./16
 
-### configure ###########
-JULIUS_HOME		= "/Users/nagano.daichi/julius/julius"
-JULIUS_EXEC		= "./julius -C /Users/nagano.daichi/julius/dictation-kit-4.5/main.jconf -C /Users/nagano.daichi/julius/dictation-kit-4.5/am-gmm.jconf -nostrip -input file -outfile" # 「前に進め」、「後ろに下がれ」などを認識
-# JULIUS_EXEC		= "./julius -C /Users/nagano.daichi/julius/dictation-kit-4.5/am-gmm.jconf -gram /Users/nagano.daichi/julius/dict/order -nostrip -input file -outfile"
-# JULIUS_EXEC		= "./julius -C /Users/nagano.daichi/julius/dictation-kit-4.5/main.jconf -C /Users/nagano.daichi/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf /Users/nagano.daichi/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input file -outfile" # 自由な単語を認識（処理速度は遅い）
-SERVER_PORT 	= 8000
-ASR_FILEPATH	= '/Users/nagano.daichi/MaskBeamformer/recog_result/asr_result/'
-ASR_IN			= 'ch_asr.wav'
-ASR_RESULT		= 'ch_asr.out'
-OUT_CHKNUM		= 5 # for avoiding that the output file is empty
-
 ### import ##############
 import cherrypy
 import subprocess
@@ -27,6 +16,16 @@ import soundfile as sf
 import numpy as np
 
 from io import BytesIO
+
+### configure ###########
+JULIUS_HOME = os.path.join(os.environ['HOME'], "julius/julius")
+JULIUS_EXEC		= "./julius -C ../dictation-kit-4.5/main.jconf -C ../dictation-kit-4.5/am-gmm.jconf -nostrip -input file -outfile" # 「前に進め」、「後ろに下がれ」などを認識
+# JULIUS_EXEC		= "./julius -C /Users/nagano.daichi/julius/dictation-kit-4.5/main.jconf -C /Users/nagano.daichi/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf /Users/nagano.daichi/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input file -outfile" # 自由な単語を認識（処理速度は遅い）
+SERVER_PORT 	= 8000
+ASR_FILEPATH	= os.path.join(os.environ['HOME'], 'MaskBeamformer/recog_result/asr_result/')
+ASR_IN			= 'ch_asr.wav'
+ASR_RESULT		= 'ch_asr.out'
+OUT_CHKNUM		= 5 # for avoiding that the output file is empty
 
 ### class define ########
 class ASRServer(object):

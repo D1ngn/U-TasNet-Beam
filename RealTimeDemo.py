@@ -169,14 +169,15 @@ def worker(mixed_audio_data):
         q.put(multichannel_estimated_target_voice_data)
     # 雑音除去を行わない場合
     else:
-        # 音声波形をスペクトログラムに変換（音源定位用）
-        mixed_audio_spec = pa.transform.stft.analysis(mixed_audio_data, L=args.fft_size, hop=args.hop_length)
-        """mixed_audio_spec: (time_frames, freq_bins, num_channels)"""
-        mixed_audio_spec = mixed_audio_spec.transpose([2, 1, 0])
-        """mixed_audio_spec: (num_channels, freq_bins, time_frames)"""
-        # MUSIC法を用いた音源定位
-        speaker_azimuth = localize_music(mixed_audio_spec)
-        print("定位結果：", str(speaker_azimuth) + "deg")
+        if args.channels > 1:
+            # 音声波形をスペクトログラムに変換（音源定位用）
+            mixed_audio_spec = pa.transform.stft.analysis(mixed_audio_data, L=args.fft_size, hop=args.hop_length)
+            """mixed_audio_spec: (time_frames, freq_bins, num_channels)"""
+            mixed_audio_spec = mixed_audio_spec.transpose([2, 1, 0])
+            """mixed_audio_spec: (num_channels, freq_bins, time_frames)"""
+            # MUSIC法を用いた音源定位
+            speaker_azimuth = localize_music(mixed_audio_spec)
+            print("定位結果：", str(speaker_azimuth) + "deg")
         # キューにデータを格納
         q.put(mixed_audio_data)
 
