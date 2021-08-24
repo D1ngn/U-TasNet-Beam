@@ -432,7 +432,7 @@ def music(Rn, num_sources):
         eigenvalues = eigenvalues[eigen_id]
         eigenvectors = eigenvectors[:, eigen_id]
         # 固有値の小さい固有ベクトルから順番に選択（雑音に対応する固有ベクトル）
-        noise_eigenvectors = eigenvectors[:, num_sources:]
+        noise_eigenvectors = eigenvectors[:, num_sources+1:]
         """noise_eigenvectors: (num_microphones, num_microphones - num_sources)"""
         # # 固有値の小さい固有ベクトルから順番に選択（雑音に対応する固有ベクトル）
         # noise_eigenvectors = eigenvectors[:, :-num_sources]
@@ -454,11 +454,11 @@ def music(Rn, num_sources):
         else:
             all_music_spectrum = np.append(all_music_spectrum, music_spectrum[np.newaxis, :], axis=0)
 
-        # 音源方向推定  
+        # # 音源方向推定  
         # estimated_angle_index = np.argmax(music_spectrum)
         # estimated_angle_rad = angle_steps[estimated_angle_index]
         # estimated_angle_deg = estimated_angle_rad * 180 / np.pi
-        # # print(estimated_angle_deg) # 定位角
+        # print(estimated_angle_deg) # 定位角
 
         # # 周波数ごとの空間スペクトルを可視化
         # # x_axis = np.linspace(-90, 90, angle_step_num)
@@ -477,13 +477,33 @@ def music(Rn, num_sources):
     # print(np.linspace(0, 8000, freq_bins).shape)
     # print(all_music_spectrum.shape)
 
-    # ax.plot_wireframe(angle_steps * 180 / np.pi, np.linspace(0, 8000, freq_bins), all_music_spectrum)
-    X, Y = np.meshgrid(angle_steps * 180 / np.pi, np.linspace(0, 8000, freq_bins))
+    # 8000Hzまで表示
     # ax.plot_wireframe(X, Y, all_music_spectrum)
+    # ax.plot_wireframe(angle_steps * 180 / np.pi, np.linspace(0, 8000, freq_bins), all_music_spectrum)
+    # X, Y = np.meshgrid(angle_steps * 180 / np.pi, np.linspace(0, 8000, freq_bins))
+    # # 空間スペクトルの曲面をプロット rstrideとcstrideはステップサイズ，cmapは彩色，linewidthは曲面のメッシュの線の太さ，をそれぞれ表す
+    # ax.plot_surface(X, Y, all_music_spectrum, rstride=1, cstride=1, cmap='hsv', linewidth=0.3) 
+    # plt.savefig("test/spatial_spectrum/spatial_spectrum.png")
+    # plt.clf()
+
+    # 2000Hzまで表示
+    X, Y = np.meshgrid(angle_steps * 180 / np.pi, (np.linspace(0, 8000, freq_bins))[:49])
     # 空間スペクトルの曲面をプロット rstrideとcstrideはステップサイズ，cmapは彩色，linewidthは曲面のメッシュの線の太さ，をそれぞれ表す
-    ax.plot_surface(X, Y, all_music_spectrum, rstride=1, cstride=1, cmap='hsv', linewidth=0.3) 
+    ax.plot_surface(X, Y, all_music_spectrum[:49, :], rstride=1, cstride=1, cmap='hsv', linewidth=0.3) 
     plt.savefig("test/spatial_spectrum/spatial_spectrum.png")
     plt.clf()
+
+    # 音源方向推定 
+    estimated_angle_deg_list = []
+    estimated_angle_index = np.argmax(all_music_spectrum, axis=1)[:49] # 2000Hz分
+    # angle_steps_repeat = np.repeat(angle_steps[np.newaxis, :], 49, axis=0) * 180 / np.pi
+    for index in estimated_angle_index:
+        estimated_angle_rad = angle_steps[index]
+        estimated_angle_deg = estimated_angle_rad * 180 / np.pi
+        estimated_angle_deg_list.append(estimated_angle_deg)
+    estimated_angle = np.average(estimated_angle_deg_list)
+    print(estimated_angle)
+
 
         
 

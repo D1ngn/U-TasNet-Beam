@@ -25,6 +25,7 @@ models_quantized.py
 
 RealTimeAudioProcess.py
 RealTimeDemo_backup.py
+RealTimeDemo_without_asr.py
 RealTimeDemo_only_speaker_separation.py
 
 training_acoustic_spatial.py
@@ -36,6 +37,8 @@ make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR.ipynb
 
 julius_asr_recog_result.txt
+asr_client_julius.py
+asr_client_julius_simple.py
 
 torchvision/
 torch-1.8.0-cp36-cp36m-linux_aarch64.whl

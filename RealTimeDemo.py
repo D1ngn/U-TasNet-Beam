@@ -18,6 +18,9 @@ import queue
 import sounddevice as sd
 import soundfile as sf
 import threading # 録音と音声処理を並列で実行するため
+import requests
+
+from io import BytesIO
 
 # マスクビームフォーマ関連
 from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask
@@ -27,9 +30,6 @@ from utils.utilities import AudioProcess
 from utils.embedder import SpeechEmbedder
 # 音源分離用モジュール 
 from asteroid.models import BaseModel
-
-# sys.path.append('..')
-# from MyLibrary.MyFunc import ASR
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -180,6 +180,10 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("使用デバイス：" , device)
 
+    # JuliusサーバのURL
+    url = "http://192.168.10.101:8000/asr_julius"
+    ses = requests.Session()
+
     wave_dir = "./audio_data/rec/"
     os.makedirs(wave_dir, exist_ok=True)
     estimated_voice_path = os.path.join(wave_dir, "record.wav")
@@ -230,8 +234,6 @@ if __name__ == "__main__":
         speaker_separation_model = BaseModel.from_pretrained(pretrained_param_speaker_separation)
     # elif args.speaker_separator_type == 'sepformer':
     speaker_separation_model.to(device)
-    # # 音声認識用のインスタンスを生成
-    # asr_ins = ASR(lang='eng')
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
     embedder.to(device)
@@ -249,7 +251,7 @@ if __name__ == "__main__":
     ref_dvec = embedder(ref_log_mel_spec[0]) # 入力は1ch分
     """ref_dvec: (embed_dim=256,)"""
 
-    # 録音
+    # 録音＋音声認識
     try:        
         # 参考： 「https://python-sounddevice.readthedocs.io/en/0.3.12/examples.html#recording-with-arbitrary-duration」
         q = queue.Queue() # データを格納した順に取り出すことができるキューを作成
@@ -263,12 +265,19 @@ if __name__ == "__main__":
                 print('#' * 50)
                 while True:
                     # キューからデータを取り出してファイルに書き込み
-                    file.write(q.get())
+                    audio_data = q.get()
+                    file.write(audio_data)
+                    # 1ch分を取り出し、バイナリデータに変換
+                    if audio_data.ndim == 2:
+                        audio_data = audio_data[:, 0]
+                    out = BytesIO()
+                    np.save(out, audio_data)
+                    binary = out.getvalue()
+                    # 音声認識サーバに送信し、認識結果を受信
+                    result = ses.post(url, files={'myFile': binary})
+                    print("認識結果：", result.text)
     except KeyboardInterrupt:
         print('\nRecording finished: ' + repr(estimated_voice_path))
-        # # 音声認識を実行
-        # target_voice_recog_text = asr_ins.speech_recognition(file) # （例） IT IS MARVELLOUS
-        # print(target_voice_recog_text)
         parser.exit(0)
     except Exception as e:
         parser.exit(type(e).__name__ + ': ' + str(e))

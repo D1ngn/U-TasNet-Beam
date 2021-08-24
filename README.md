@@ -109,20 +109,32 @@ $ python3 training.py
 
 2. Run
 
-   ```
-   $ python3 RealTimeDemo.py -dm
-   ```
+   Open two terminals and run following commands in each terminal.
+   
+   - Server
 
-   **Option**
-
-   - `-dm` : whether model denoises audio or not
-   - `-d` : input device (numeric ID or substring) (you can check ID by running following commands)
-      ```
-      $ python3 
-      >>> import sounddevice
-      >>> sounddevice.query_devices()
-      ```   
-   -  
+     ```
+     $ python3 asr_server_julius.py
+     ```
+   
+   - Client
+   
+     ```
+     $ python3 RealTimeDemo.py -dm
+     ```
+   
+     **Option**
+   
+     - `-dm` : whether model denoises audio or not
+   
+     - `-d` : input device (numeric ID or substring) (you can check ID by running following commands)
+        ```
+        $ python3 
+        >>> import sounddevice
+        >>> sounddevice.query_devices()
+        ```
+   
+     - 
 
 
 
