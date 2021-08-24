@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Julius web server (with CherryPy:http://www.cherrypy.org/)
-# written by Ryota NISHIMURA 2015/Dec./16
 
 ### import ##############
 import cherrypy
@@ -56,7 +54,7 @@ class ASRServer(object):
         # with open(ASR_FILEPATH + ASR_IN, 'wb') as f:
         #     f.write(myFile.file.read())
         # f.close()
-        audio_data = np.load(BytesIO(myFile.file.read()))
+        audio_data = np.load(BytesIO(myFile.file.read()), allow_pickle=True)
         sf.write(ASR_FILEPATH + ASR_IN, audio_data, 16000)
 
 		# ASR using Julius
