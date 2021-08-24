@@ -73,7 +73,7 @@ class ASRServer(object):
             time.sleep(0.1)
         
         # read result file & send it to client
-        outlines = open(ASR_FILEPATH + ASR_RESULT).readline()[11:] # 認識結果のみ
+        outlines = open(ASR_FILEPATH + ASR_RESULT).readline()[12:] # 認識結果のみ
         # outlines = open(ASR_FILEPATH + ASR_RESULT).read()
         # outlines = "<xmp>" + outlines + "</xmp>"
         return outlines

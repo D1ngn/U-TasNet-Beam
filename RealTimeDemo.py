@@ -17,9 +17,9 @@ import time as tm
 import queue
 import sounddevice as sd
 import soundfile as sf
+import pyroomacoustics as pa # 音源定位用
 import threading # 録音と音声処理を並列で実行するため
 import requests
-
 from io import BytesIO
 
 # マスクビームフォーマ関連
@@ -48,6 +48,22 @@ def audio_callback(indata, frames, time, status):
     th = threading.Thread(target=worker, args=(indata.copy(),))
     # スレッドの開始
     th.start()
+
+# 音源定位
+def localize_music(spec):
+    """
+    spec: (num_channels, freq_bins, time_frames)
+    """
+    # MUSIC法を用いて音源定位（cは音速）
+    doa = pa.doa.algorithms['MUSIC'](mic_alignments, args.sample_rate, args.fft_size, c=343., num_src=1) # Construct the new DOA object
+    doa.locate_sources(spec, freq_range=freq_range)
+    speaker_azimuth = doa.azimuth_recon / np.pi * 180.0 # rad→deg
+    # 0°〜360°表記を-180°〜180°表記に変更
+    if speaker_azimuth[0] > 180:
+        speaker_azimuth = int(speaker_azimuth[0] - 360)
+    else:
+        speaker_azimuth = int(speaker_azimuth[0])
+    return speaker_azimuth
 
 # 録音した音声に対する処理を別スレッドで行う関数（録音と音声処理を並列処理）
 def worker(mixed_audio_data):
@@ -139,6 +155,9 @@ def worker(mixed_audio_data):
         else:
             print("Please specify the correct beamformer type")
         """estimated_spec: (num_channels, freq_bins, time_frames=blocksize)"""
+        # MUSIC法を用いた音源定位
+        speaker_azimuth = localize_music(estimated_target_spec)
+        print("音源定位結果：", str(speaker_azimuth) + "deg") 
         # マルチチャンネルスペクトログラムを音声波形に変換
         multichannel_estimated_target_voice_data = audio_processor.spec_to_wave(estimated_target_spec, mixed_audio_data)
         # multichannel_estimated_interference_voice_data = audio_processor.spec_to_wave(estimated_interference_spec, mixed_audio_data)
@@ -150,6 +169,14 @@ def worker(mixed_audio_data):
         q.put(multichannel_estimated_target_voice_data)
     # 雑音除去を行わない場合
     else:
+        # 音声波形をスペクトログラムに変換（音源定位用）
+        mixed_audio_spec = pa.transform.stft.analysis(mixed_audio_data, L=args.fft_size, hop=args.hop_length)
+        """mixed_audio_spec: (time_frames, freq_bins, num_channels)"""
+        mixed_audio_spec = mixed_audio_spec.transpose([2, 1, 0])
+        """mixed_audio_spec: (num_channels, freq_bins, time_frames)"""
+        # MUSIC法を用いた音源定位
+        speaker_azimuth = localize_music(mixed_audio_spec)
+        print("定位結果：", str(speaker_azimuth) + "deg")
         # キューにデータを格納
         q.put(mixed_audio_data)
 
@@ -175,6 +202,26 @@ if __name__ == "__main__":
     parser.add_argument('-tac', '--target_aware_channel', type=int, default=0, help='microphone channel near target source')
     parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source')
     args = parser.parse_args()
+
+    ########################################################音源定位用設定############################################################
+    freq_range = [200, 3000] # 空間スペクトルの算出に用いる周波数帯[Hz]
+    # TAMAGO-03マイクロホンアレイにおける各マイクロホンの空間的な位置関係
+    mic_alignments = np.array(
+    [
+        [0.035, 0.0, 0.0],
+        [0.035/np.sqrt(2), 0.035/np.sqrt(2), 0.0],
+        [0.0, 0.035, 0.0],
+        [-0.035/np.sqrt(2), 0.035/np.sqrt(2), 0.0],
+        [-0.035, 0.0, 0.0],
+        [-0.035/np.sqrt(2), -0.035/np.sqrt(2), 0.0],
+        [0.0, -0.035, 0.0],
+        [0.035/np.sqrt(2), -0.035/np.sqrt(2), 0.0]
+    ])
+    """mic_alignments: (num_microphones, 3D coordinates [m])"""
+    # 各マイクロホンの空間的な位置関係を表す配列
+    mic_alignments = mic_alignments.T # get the microphone arra
+    """mic_alignments: (3D coordinates [m], num_microphones)"""
+    ###################################################################################################################################
 
     # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -275,7 +322,7 @@ if __name__ == "__main__":
                     binary = out.getvalue()
                     # 音声認識サーバに送信し、認識結果を受信
                     result = ses.post(url, files={'myFile': binary})
-                    print("認識結果：", result.text)
+                    print("音声認識結果：", result.text)
     except KeyboardInterrupt:
         print('\nRecording finished: ' + repr(estimated_voice_path))
         parser.exit(0)
