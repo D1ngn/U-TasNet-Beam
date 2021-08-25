@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Julius web server (with CherryPy:http://www.cherrypy.org/)
-# written by Ryota NISHIMURA 2015/Dec./16
 
 ### import ##############
 import cherrypy
