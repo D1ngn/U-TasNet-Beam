@@ -54,13 +54,14 @@ class ASRServer(object):
         # with open(ASR_FILEPATH + ASR_IN, 'wb') as f:
         #     f.write(myFile.file.read())
         # f.close()
-        audio_data = np.load(BytesIO(myFile.file.read()), allow_pickle=True)
+        audio_data = np.load(BytesIO(myFile.file.read()))
         sf.write(ASR_FILEPATH + ASR_IN, audio_data, 16000)
 
 		# ASR using Julius
         if os.path.exists(ASR_FILEPATH + ASR_RESULT):
             os.remove(ASR_FILEPATH + ASR_RESULT) # delete a previous result file
         send_msg = ASR_FILEPATH + ASR_IN + '\n'
+        print(send_msg)
         self.p.stdin.write(send_msg.encode()) # send wav file name to Julius
         # self.p.stdin.write(ASR_FILEPATH + ASR_IN + '\n')	# send wav file name to Julius
         self.p.stdin.flush() # バッファの解放
