@@ -5,6 +5,7 @@ output/
 eval_result/
 recog_result/
 test/
+temp/
 
 inference_backup.py
 inference_dereverb.py
@@ -25,6 +26,7 @@ models_quantized.py
 
 RealTimeAudioProcess.py
 RealTimeDemo_backup.py
+RealTimeDemo_speed_test.py
 RealTimeDemo_without_localization_asr.py
 RealTimeDemo_only_speaker_separation.py
 
@@ -45,3 +47,5 @@ torch-1.8.0-cp36-cp36m-linux_aarch64.whl
 .python-version
 
 music_localization_test.py
+
+mic_record_to_speech_extracter

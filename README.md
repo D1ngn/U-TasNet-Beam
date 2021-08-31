@@ -105,11 +105,11 @@ $ python3 training.py
 
 1. Prepare the microphone array
 
-   You can use
+   You can use TAMAGO-03 microphone array with 8 microphones.
 
 2. Run
 
-   Open two terminals and run following commands in each terminal.
+   Open two terminals and run following commands in each terminal (Mac or Linux).
    
    - Server
 
@@ -120,21 +120,52 @@ $ python3 training.py
    - Client
    
      ```
-     $ python3 RealTimeDemo.py -dm
+     $ python3 RealTimeDemo.py -dm -d 0 -mg 20
      ```
    
      **Option**
    
-     - `-dm` : whether model denoises audio or not
+     - `-dm` : Whether model denoises audio or not
    
-     - `-d` : input device (numeric ID or substring) (you can check ID by running following commands)
+     - `-d` : Input device (numeric ID or substring) (you can check ID by running following commands)
         ```
         $ python3 
         >>> import sounddevice
         >>> sounddevice.query_devices()
         ```
    
-     - 
+     - `-mg`: Increase microphone gain
+
+   If you can use g++ complier on linux, open three terminals and run following commands in each terminal (Input stream speed is faster).
+
+   - ASR server
+
+     ```
+     $ python3 asr_server_julius.py
+     ```
+   
+   - Speech extracter interface (server & client)
+
+     ```
+     $ python3 speech_extracter_interface.py -dm -mg 20
+     ```
+   
+   - Input stream client
+   
+     ```
+     $ g++ mic_record_to_speech_extracter.cpp -lasound -lm -o mic_record_to_speech_extracter
+     $ ./mic_record_to_speech_extracter plughw:2,0
+     ```
+     If you run `arecord -l` and the following is displayed, specify the argument part as `plughw:[card number],[subdevice number]` 
+     ```
+      card 2: TAMAGO03 [TAMAGO-03], device 0: USB Audio [USB Audio]
+      Subdevices: 1/1
+      Subdevice #0: subdevice #0
+      ```
+
+
+   
+
 
 
 

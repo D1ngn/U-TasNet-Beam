@@ -10,18 +10,16 @@ import torch.utils.data as data
 # from torch2trt import torch2trt # Xavier上で動かす場合のみ
 
 import os
-import sys
 import numpy as np
 import argparse
 import time as tm
-import queue
-import sounddevice as sd
 import soundfile as sf
 import pyroomacoustics as pa # 音源定位用
-import threading # 録音と音声処理を並列で実行するため
 import requests
 from io import BytesIO
-from multiprocessing import Pool
+import socket
+import subprocess
+
 
 # マスクビームフォーマ関連
 from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask
@@ -38,17 +36,6 @@ def int_or_str(text):
         return int(text)
     except ValueError:
         return text
-
-# 一定の長さに分割された音声を繰り返し処理する関数
-def audio_callback(indata, frames, time, status):
-    """This is called (from a separate thread) for each audio block."""
-    if status:
-        print(status, file=sys.stderr)
-    # 音声処理を別スレッドで実行するためのインスタンスを生成（並列処理しないと音が途切れる）
-    # Fancy indexing with mapping creates a (necessary!) copy
-    th = threading.Thread(target=worker, args=(indata.copy(),))
-    # スレッドの開始
-    th.start()
 
 # 音源定位
 def localize_music(spec):
@@ -67,7 +54,7 @@ def localize_music(spec):
     return speaker_azimuth
 
 # 録音した音声に対する処理を別スレッドで行う関数（録音と音声処理を並列処理）
-def worker(mixed_audio_data):
+def speech_extracter(mixed_audio_data):
     # マイクロホンのゲイン調整
     mixed_audio_data = mixed_audio_data * args.mic_gain
     # 雑音除去を行う場合
@@ -100,12 +87,12 @@ def worker(mixed_audio_data):
         # 話者分離
         separated_audio_data = audio_processor.speaker_separation(speaker_separation_model, multichannel_denoised_data)
         """separated_audio_data: (num_sources, num_samples, num_channels)"""
-        # start_time_speeaker_selector = time.perf_counter()
+        # start_time_speeaker_selector = tm.perf_counter()
         # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断）
         target_speaker_id, speech_amp_spec_all = audio_processor.speaker_selector(embedder, separated_audio_data, ref_dvec, device=device)
         """speech_amp_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""
         # print("ID of the target speaker:", target_speaker_id)
-        # finish_time_speeaker_selector = time.perf_counter()
+        # finish_time_speeaker_selector = tm.perf_counter()
         # duration_speeaker_selector = finish_time_speeaker_selector - start_time_speeaker_selector
         # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / sample_rate)
         # print("実時間比（Speaker Selector）：{:.3f}".format(rtf))
@@ -167,7 +154,8 @@ def worker(mixed_audio_data):
         # finish_time = tm.perf_counter()
         # print("処理時間：", finish_time - start_time)
         # キューにデータを格納
-        q.put(multichannel_estimated_target_voice_data)
+        # q.put(multichannel_estimated_target_voice_data)
+        return multichannel_estimated_target_voice_data, speaker_azimuth
     # 雑音除去を行わない場合
     else:
         if args.channels > 1:
@@ -180,7 +168,8 @@ def worker(mixed_audio_data):
             speaker_azimuth = localize_music(mixed_audio_spec)
             print("音源定位結果：", str(speaker_azimuth) + "deg")
         # キューにデータを格納
-        q.put(mixed_audio_data)
+        # q.put(mixed_audio_data)
+        return mixed_audio_data, speaker_azimuth
 
 
 if __name__ == "__main__":
@@ -188,13 +177,13 @@ if __name__ == "__main__":
     # コマンドライン引数を受け取る
     parser = argparse.ArgumentParser(description='Real time voice separation')
     parser.add_argument('-dm', '--denoising_mode', action='store_true', help='whether model denoises audio or not')
-    parser.add_argument('-d', '--device', type=int_or_str, default=0, help='input device (numeric ID or substring)')
     parser.add_argument('-mg', '--mic_gain', type=int, default=1, help='Microphone gain')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate')
     parser.add_argument('-cs', '--chunk_size', type=int, default=48000, help='chunk size of mask estimator and beamformer input')
     parser.add_argument('-c', '--channels', type=int, default=8, help='number of input channels')
     parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform')
     parser.add_argument('-hl', '--hop_length', type=int, default=160, help='number of audio samples between adjacent STFT columns')
+    parser.add_argument('-twd', '--temp_wav_dir', type=str, default="./temp/", help='directory for storaging temporaly wave file')
     parser.add_argument('-mt', '--model_type', type=str, default='Unet_single_mask', help='type of mask estimator model')
     parser.add_argument('-sst', '--speaker_separator_type', type=str, default='conv_tasnet', help='type of speaker separator model')
     parser.add_argument('-bt', '--beamformer_type', type=str, default='MVDR', help='type of beamformer (DS or MVDR or GEV or MWF)')
@@ -205,7 +194,7 @@ if __name__ == "__main__":
     parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source')
     args = parser.parse_args()
 
-    ########################################################音源定位用設定############################################################
+    #########################音源定位用設定########################
     freq_range = [200, 3000] # 空間スペクトルの算出に用いる周波数帯[Hz]
     # TAMAGO-03マイクロホンアレイにおける各マイクロホンの空間的な位置関係
     mic_alignments = np.array(
@@ -223,20 +212,21 @@ if __name__ == "__main__":
     # 各マイクロホンの空間的な位置関係を表す配列
     mic_alignments = mic_alignments.T # get the microphone arra
     """mic_alignments: (3D coordinates [m], num_microphones)"""
-    ###################################################################################################################################
+    #############################################################
 
-    # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print("使用デバイス：" , device)
-
+    #################################通信用設定#################################
+    # Nakbotクライアントからの接続用
+    ss_host = "127.0.0.1"
+    ss_port = 1234
     # JuliusサーバのURL
     # url = "http://192.168.10.101:8000/asr_julius"
     url = "http://192.168.10.116:8000/asr_julius" # Jetson Xavierではこっちを使用
     ses = requests.Session()
+    ###########################################################################
 
-    wave_dir = "./audio_data/rec/"
-    os.makedirs(wave_dir, exist_ok=True)
-    estimated_voice_path = os.path.join(wave_dir, "record.wav")
+    # GPUが使える場合はGPUを使用、使えない場合はCPUを使用
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("使用デバイス：" , device)
     # ネットワークモデルと学習済みのパラメータを保存したチェックポイントファイルのパスを指定
     if args.model_type == 'BLSTM':
         model = BLSTMMaskEstimator()
@@ -263,7 +253,6 @@ if __name__ == "__main__":
 
     # 前処理クラスのインスタンスを作成
     audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    
     # ネットワークをCPUまたはGPUへ
     model.to(device)
     # 学習済みのパラメータをロード
@@ -301,33 +290,47 @@ if __name__ == "__main__":
     ref_dvec = embedder(ref_log_mel_spec[0]) # 入力は1ch分
     """ref_dvec: (embed_dim=256,)"""
 
-    # 録音＋音声認識
-    try:        
-        # 参考： 「https://python-sounddevice.readthedocs.io/en/0.3.12/examples.html#recording-with-arbitrary-duration」
-        q = queue.Queue() # データを格納した順に取り出すことができるキューを作成
-        # Make sure the file is opened before recording anything
-        with sf.SoundFile(estimated_voice_path, mode='w', samplerate=args.sample_rate,
-                        channels=args.channels) as file:
-            with sd.InputStream(samplerate=args.sample_rate, blocksize=args.chunk_size, device=args.device,
-                                channels=args.channels, callback=audio_callback):
-                print('#' * 50)
-                print('press Ctrl+C to stop the recording')
-                print('#' * 50)
-                while True:
-                    # キューからデータを取り出してファイルに書き込み
-                    audio_data = q.get() # ここでinput overflowが起きる
-                    file.write(audio_data)
-                    # 1ch分を取り出し、バイナリデータに変換
-                    if audio_data.ndim == 2:
-                        audio_data = audio_data[:, 0]
-                    out = BytesIO()
-                    np.save(out, audio_data)
-                    binary = out.getvalue()
-                    # 音声認識サーバに送信し、認識結果を受信
-                    result = ses.post(url, files={'myFile': binary})
-                    print("音声認識結果：", result.text)
-    except KeyboardInterrupt:
-        print('\nRecording finished: ' + repr(estimated_voice_path))
-        parser.exit(0)
-    except Exception as e:
-        parser.exit(type(e).__name__ + ': ' + str(e))
+    # Nakbotクライアント（駆動側）から送られてきた音声データを受け取って処理
+    # AF_INETはIPv4、SOCK_STREAMはTCPであることを表す
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # IPとPORTを指定してバインド
+    server_sock.bind((ss_host, ss_port))
+
+    # 接続を待機
+    server_sock.listen()
+    print("Wainting for connections...")
+    # 接続された場合接続先の情報を格納
+    client_sock, client_address = server_sock.accept()
+    # 一時的にデータを保存するための音声ファイルパス
+    os.makedirs(args.temp_wav_dir, exist_ok=True)
+    temp_wav_path = os.path.join(args.temp_wav_dir, "temp.wav")
+    while True:
+        # データ受け取り（引数でデータサイズを指定）
+        recv_msg = client_sock.recv(1024)
+        # バイナリデータを文字列に変換
+        raw_path = recv_msg.decode('utf-8')
+        # データが空の場合は以降の処理をスキップ
+        if len(raw_path) == 0:
+            continue
+        # soxコマンドによりrawファイルをwavファイルに変換
+        raw2wav_cmd = "sox -t raw -r 16k -e signed -b 16 -c 8 -x {} {}".format(raw_path, temp_wav_path)
+        subprocess.call(raw2wav_cmd, shell=True)
+        # rawファイルを削除する
+        os.remove(raw_path)
+        # wavファイルをnumpy配列として読み込み
+        temp_wav_data, _ = sf.read(temp_wav_path)
+        # 目的話者の発話抽出と位置検出を実行
+        temp_audio_data, speaker_azimuth = speech_extracter(temp_wav_data)
+        # 1ch分を取り出し、バイナリデータに変換
+        if temp_audio_data.ndim == 2:
+            temp_audio_data = temp_audio_data[:, 0]
+        out = BytesIO()
+        np.save(out, temp_audio_data)
+        binary = out.getvalue()
+        # 音声認識サーバに送信し、認識結果を受信
+        result = ses.post(url, files={'myFile': binary})
+        print("音声認識結果：", result.text)
+        # 音声認識結果と音源定位結果を結合（"\0"はC++で文字列配列を扱う際に必要）
+        send_data = result.text.strip() + "|" + str(speaker_azimuth) + "\0"
+        # データをバイナリデータに変換してクライアントに送信
+        client_sock.send(send_data.encode('utf-8'))

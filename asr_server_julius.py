@@ -4,16 +4,13 @@
 ### import ##############
 import cherrypy
 import subprocess
-import sys
 import os
 import time
-import socket
-from cherrypy import request
-
 import soundfile as sf
 import numpy as np
-
+import socket
 from io import BytesIO
+
 
 ### configure ###########
 JULIUS_HOME = os.path.join(os.environ['HOME'], "julius/julius")
@@ -28,7 +25,7 @@ OUT_CHKNUM		= 5 # for avoiding that the output file is empty
 ### class define ########
 class ASRServer(object):
 	# Julius execution -> subprocess
-    p = subprocess.Popen (JULIUS_EXEC, shell=True, cwd=JULIUS_HOME, 
+    p = subprocess.Popen(JULIUS_EXEC, shell=True, cwd=JULIUS_HOME, 
         stdin=subprocess.PIPE,stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
     (stdouterr, stdin) = (p.stdout, p.stdin)
 
@@ -61,7 +58,6 @@ class ASRServer(object):
         if os.path.exists(ASR_FILEPATH + ASR_RESULT):
             os.remove(ASR_FILEPATH + ASR_RESULT) # delete a previous result file
         send_msg = ASR_FILEPATH + ASR_IN + '\n'
-        print(send_msg)
         self.p.stdin.write(send_msg.encode()) # send wav file name to Julius
         # self.p.stdin.write(ASR_FILEPATH + ASR_IN + '\n')	# send wav file name to Julius
         self.p.stdin.flush() # バッファの解放
