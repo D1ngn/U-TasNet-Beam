@@ -59,8 +59,6 @@ def speech_extracter(mixed_audio_data):
     mixed_audio_data = mixed_audio_data * args.mic_gain
     # 雑音除去を行う場合
     if args.denoising_mode:
-        # # 処理時間計測
-        # start_time = tm.perf_counter()
         # マルチチャンネル音声データを複素スペクトログラムに変換
         mixed_complex_spec = audio_processor.calc_complex_spec(mixed_audio_data)
         """mixed_complex_spec: (num_channels, freq_bins, time_frames)"""
@@ -91,11 +89,6 @@ def speech_extracter(mixed_audio_data):
         # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断）
         target_speaker_id, speech_amp_spec_all = audio_processor.speaker_selector(embedder, separated_audio_data, ref_dvec, device=device)
         """speech_amp_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""
-        # print("ID of the target speaker:", target_speaker_id)
-        # finish_time_speeaker_selector = tm.perf_counter()
-        # duration_speeaker_selector = finish_time_speeaker_selector - start_time_speeaker_selector
-        # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / sample_rate)
-        # print("実時間比（Speaker Selector）：{:.3f}".format(rtf))
         # 雑音の振幅スペクトログラムを算出
         noise_amp_spec = audio_processor.calc_amp_spec(multichannel_noise_spec)
         """noise_amp_spec: (num_channels, freq_bins, time_frames)"""
@@ -150,11 +143,6 @@ def speech_extracter(mixed_audio_data):
         multichannel_estimated_target_voice_data = audio_processor.spec_to_wave(estimated_target_spec, mixed_audio_data)
         # multichannel_estimated_interference_voice_data = audio_processor.spec_to_wave(estimated_interference_spec, mixed_audio_data)
         """multichannel_estimated_target_voice_data: (num_samples, num_channels)"""
-        multichannel_estimated_target_voice_data = multichannel_estimated_target_voice_data * 5 # 音量調整のため仮設定 TODO
-        # finish_time = tm.perf_counter()
-        # print("処理時間：", finish_time - start_time)
-        # キューにデータを格納
-        # q.put(multichannel_estimated_target_voice_data)
         return multichannel_estimated_target_voice_data, speaker_azimuth
     # 雑音除去を行わない場合
     else:
@@ -167,8 +155,6 @@ def speech_extracter(mixed_audio_data):
             # MUSIC法を用いた音源定位
             speaker_azimuth = localize_music(mixed_audio_spec)
             print("音源定位結果：", str(speaker_azimuth) + "deg")
-        # キューにデータを格納
-        # q.put(mixed_audio_data)
         return mixed_audio_data, speaker_azimuth
 
 
@@ -263,7 +249,7 @@ if __name__ == "__main__":
     model.eval()
     # # 入力サンプルとともにTensorRTに変換
     # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513)).to(device)
-    # model = torch2trt(model, [tmp])
+    # # model = torch2trt(model, [tmp])
     # model = torch2trt(model, [tmp], fp16_mode=True) # 精度によってモード切り替え
     # 話者分離モデルを指定
     if args.speaker_separator_type == 'conv_tasnet':
@@ -295,7 +281,6 @@ if __name__ == "__main__":
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # IPとPORTを指定してバインド
     server_sock.bind((ss_host, ss_port))
-
     # 接続を待機
     server_sock.listen()
     print("Wainting for connections...")

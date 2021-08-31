@@ -163,7 +163,6 @@ def worker(mixed_audio_data):
         multichannel_estimated_target_voice_data = audio_processor.spec_to_wave(estimated_target_spec, mixed_audio_data)
         # multichannel_estimated_interference_voice_data = audio_processor.spec_to_wave(estimated_interference_spec, mixed_audio_data)
         """multichannel_estimated_target_voice_data: (num_samples, num_channels)"""
-        multichannel_estimated_target_voice_data = multichannel_estimated_target_voice_data * 5 # 音量調整のため仮設定 TODO
         # finish_time = tm.perf_counter()
         # print("処理時間：", finish_time - start_time)
         # キューにデータを格納
