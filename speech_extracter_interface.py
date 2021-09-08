@@ -23,7 +23,7 @@ import subprocess
 
 # マスクビームフォーマ関連
 from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask
-from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, gev_beamformer, sparse, ds_beamformer, mwf, mvdr_beamformer_two_speakers
+from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, gev_beamformer, sparse, ds_beamformer, mwf, mvdr_beamformer_two_speakers, localize_music
 from utils.utilities import AudioProcess
 # 話者識別用モデル
 from utils.embedder import SpeechEmbedder
@@ -36,22 +36,6 @@ def int_or_str(text):
         return int(text)
     except ValueError:
         return text
-
-# 音源定位
-def localize_music(spec):
-    """
-    spec: (num_channels, freq_bins, time_frames)
-    """
-    # MUSIC法を用いて音源定位（cは音速）
-    doa = pa.doa.algorithms['MUSIC'](mic_alignments, args.sample_rate, args.fft_size, c=343., num_src=1) # Construct the new DOA object
-    doa.locate_sources(spec, freq_range=freq_range)
-    speaker_azimuth = doa.azimuth_recon / np.pi * 180.0 # rad→deg
-    # 0°〜360°表記を-180°〜180°表記に変更
-    if speaker_azimuth[0] > 180:
-        speaker_azimuth = int(speaker_azimuth[0] - 360)
-    else:
-        speaker_azimuth = int(speaker_azimuth[0])
-    return speaker_azimuth
 
 # 録音した音声に対する処理を別スレッドで行う関数（録音と音声処理を並列処理）
 def speech_extracter(mixed_audio_data):
@@ -137,7 +121,7 @@ def speech_extracter(mixed_audio_data):
             print("Please specify the correct beamformer type")
         """estimated_spec: (num_channels, freq_bins, time_frames=blocksize)"""
         # MUSIC法を用いた音源定位
-        speaker_azimuth = localize_music(estimated_target_spec)
+        speaker_azimuth = localize_music(estimated_target_spec, mic_alignments, args.sample_rate, args.fft_size, freq_range)
         print("音源定位結果：", str(speaker_azimuth) + "deg") 
         # マルチチャンネルスペクトログラムを音声波形に変換
         multichannel_estimated_target_voice_data = audio_processor.spec_to_wave(estimated_target_spec, mixed_audio_data)
@@ -153,7 +137,7 @@ def speech_extracter(mixed_audio_data):
             mixed_audio_spec = mixed_audio_spec.transpose([2, 1, 0])
             """mixed_audio_spec: (num_channels, freq_bins, time_frames)"""
             # MUSIC法を用いた音源定位
-            speaker_azimuth = localize_music(mixed_audio_spec)
+            speaker_azimuth = localize_music(mixed_audio_spec, mic_alignments, args.sample_rate, args.fft_size, freq_range)
             print("音源定位結果：", str(speaker_azimuth) + "deg")
         return mixed_audio_data, speaker_azimuth
 

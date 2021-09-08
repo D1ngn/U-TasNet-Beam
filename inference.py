@@ -21,11 +21,11 @@ import warnings
 warnings.simplefilter('ignore')
 
 from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, CNNMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask, UnetMaskEstimator_kernel3_single_mask_two_speakers # 雑音・残響除去モデル各種
-from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, sparse, ds_beamformer, mwf # ビームフォーマ各種
+from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, sparse, ds_beamformer, mwf, localize_music # ビームフォーマ各種
 from utils.utilities import AudioProcess, spec_plot, count_parameters, wave_plot # 音声処理用
 from utils.embedder import SpeechEmbedder # 話者識別用
 from utils.evaluate import audio_eval, asr_eval # 評価用
-# from utils.asr import ASR # 音声認識用
+from utils.asr import ASR # 音声認識用
 from utils.asr import asr_julius # 音声認識用
 from asteroid.models import BaseModel # 音源分離用
 
@@ -48,8 +48,28 @@ def main():
     parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source') # 雑音に関するマスクのチャンネル
     args = parser.parse_args()
 
-    # 処理後の音声の振幅の最大値を処理前の混合音声の振幅の最大値に合わせる（True）か否か（False）
-    fit_max_value = False 
+    # # 処理後の音声の振幅の最大値を処理前の混合音声の振幅の最大値に合わせる（True）か否か（False）
+    # fit_max_value = False
+
+    #########################音源定位用設定########################
+    freq_range = [200, 3000] # 空間スペクトルの算出に用いる周波数帯[Hz]
+    # TAMAGO-03マイクロホンアレイにおける各マイクロホンの空間的な位置関係
+    mic_alignments = np.array(
+    [
+        [0.035, 0.0, 0.0],
+        [0.035/np.sqrt(2), 0.035/np.sqrt(2), 0.0],
+        [0.0, 0.035, 0.0],
+        [-0.035/np.sqrt(2), 0.035/np.sqrt(2), 0.0],
+        [-0.035, 0.0, 0.0],
+        [-0.035/np.sqrt(2), -0.035/np.sqrt(2), 0.0],
+        [0.0, -0.035, 0.0],
+        [0.035/np.sqrt(2), -0.035/np.sqrt(2), 0.0]
+    ])
+    """mic_alignments: (num_microphones, 3D coordinates [m])"""
+    # 各マイクロホンの空間的な位置関係を表す配列
+    mic_alignments = mic_alignments.T # get the microphone arra
+    """mic_alignments: (3D coordinates [m], num_microphones)"""
+    ############################################################# 
     
     # 英語（男性）
     # 3秒版
@@ -186,8 +206,8 @@ def main():
     # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513)).to(device)
     # # model = torch2trt(model, [tmp])
     # model = torch2trt(model, [tmp], fp16_mode=True) # 精度によってモード切り替え
-    # # 音声認識用のインスタンスを生成
-    # asr_ins = ASR(lang='eng')
+    # 音声認識用のインスタンスを生成
+    asr_ins = ASR(lang='eng')
     # 話者分離モデルの学習済みパラメータをダウンロード
     if args.speaker_separator_type == 'conv_tasnet':
         # 「https://huggingface.co/models?filter=asteroid」にある話者分離用の学習済みモデルを指定
@@ -323,10 +343,10 @@ def main():
     # multichannel_estimated_interference_voice_data = audio_processor.spec_to_wave(estimated_interference_spec, mixed_audio_data)
     """multichannel_estimated_target_voice_data: (num_samples, num_channels)"""
 
-    # 最大値を元の音声に合わせる場合
-    if fit_max_value:
-        max_amp_postprocess = multichannel_estimated_target_voice_data.max()
-        multichannel_estimated_target_voice_data *= max_amp_preprocess / max_amp_postprocess
+    # # 最大値を元の音声に合わせる場合
+    # if fit_max_value:
+    #     max_amp_postprocess = multichannel_estimated_target_voice_data.max()
+    #     multichannel_estimated_target_voice_data *= max_amp_preprocess / max_amp_postprocess
 
     # 処理の終了時間
     finish_time = time.perf_counter()
@@ -336,6 +356,10 @@ def main():
     # 実時間比（Real Time Factor）
     rtf = process_time / (mixed_audio_data.shape[0] / args.sample_rate)
     print("実時間比：{:.3f}".format(rtf))
+
+    # MUSIC法を用いた音源定位
+    speaker_azimuth = localize_music(estimated_target_spec, mic_alignments, args.sample_rate, args.fft_size)
+    print("音源定位結果：", str(speaker_azimuth) + "deg") 
 
     # オーディオデータを保存
     estimated_target_voice_path = os.path.join(wave_dir, "estimated_target_voice.wav")
@@ -398,74 +422,73 @@ def main():
     mixed_audio_spec_path = os.path.join(spec_dir, "mixed_audio.png")
     spec_plot(base_dir, mixed_audio_path, mixed_audio_spec_path)
 
-
-    # 音声評価
+    # 音源分離性能の評価
     sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = \
         audio_eval(args.sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_target_voice_path)
     
     # 音声認識性能の評価
-    # # ESPnetを用いる場合
-    # target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
-    # target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
-    # mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
-    # mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
-    # estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
-    # estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
-    # # ファイル名を取得
-    # file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
-    # # 正解ラベルを読み込む
-    # reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
-    # with open(reference_label_path, 'r', encoding="utf8") as ref:
-    #     # ピリオドとコンマを消して大文字に変換した後、スペースで分割
-    #     reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
-    # # WERを計算
-    # clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
-    # mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
-    # est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
-    # wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
-    # wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
-    # wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
-
-
-    # Juliusを用いる場合（日本語シングルチャンネル音声のみに対応）
-    # 目的音
-    target_voice_data, _ = sf.read(target_voice_path)
-    # マルチチャンネル音声の場合は1ch目を取り出す
-    if target_voice_data.ndim == 2:
-        target_voice_1ch_path = "./utils/target_voice_1ch.wav"
-        sf.write(target_voice_1ch_path, target_voice_data[:, 0], args.sample_rate)
-        target_voice_recog_text = asr_julius(target_voice_1ch_path) # （例） IT IS MARVELLOUS
-        os.remove(target_voice_1ch_path)
-    else:    
-        target_voice_recog_text = asr_julius(target_voice_path) # （例） IT IS MARVELLOUS
-    target_voice_recog_text = target_voice_recog_text.split() # （例） ['IT', 'IS', 'MARVELLOUS']
-    # 混合音
-    mixed_audio_data, _ = sf.read(mixed_audio_path)
-    if mixed_audio_data.ndim == 2:
-        mixed_audio_1ch_path = "./utils/mixed_audio_1ch.wav"
-        sf.write(mixed_audio_1ch_path, mixed_audio_data[:, 0], args.sample_rate)
-        mixed_audio_recog_text = asr_julius(mixed_audio_1ch_path)
-        os.remove(mixed_audio_1ch_path)
-    else:    
-        mixed_audio_recog_text = asr_julius(mixed_audio_path)
-    mixed_audio_recog_text = mixed_audio_recog_text.split()
-    # 処理後の目的音
-    estimated_target_voice_data, _ = sf.read(estimated_target_voice_path)
-    if estimated_target_voice_data.ndim == 2:
-        estimated_target_voice_1ch_path = "./utils/estimated_target_voice_1ch.wav"
-        sf.write(estimated_target_voice_1ch_path, estimated_target_voice_data[:, 0], args.sample_rate)
-        estimated_voice_recog_text = asr_julius(estimated_target_voice_1ch_path)
-        os.remove(estimated_target_voice_1ch_path)
-    else:    
-        estimated_voice_recog_text = asr_julius(mixed_audio_path)
-    estimated_voice_recog_text = estimated_voice_recog_text.split()
+    # ESPnetを用いる場合
+    target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
+    target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
+    mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
+    mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
+    estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
+    estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
+    # ファイル名を取得
+    file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
+    # 正解ラベルを読み込む
+    reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
+    with open(reference_label_path, 'r', encoding="utf8") as ref:
+        # ピリオドとコンマを消して大文字に変換した後、スペースで分割
+        reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
     # WERを計算
-    clean_recog_result_save_path = os.path.join(recog_result_dir, 'clean.txt')
-    mix_recog_result_save_path = os.path.join(recog_result_dir, 'mix.txt')
-    est_recog_result_save_path = os.path.join(recog_result_dir, 'est.txt')
+    clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
+    mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
+    est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
     wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
     wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
     wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
+
+
+    # # Juliusを用いる場合（日本語シングルチャンネル音声のみに対応）
+    # # 目的音
+    # target_voice_data, _ = sf.read(target_voice_path)
+    # # マルチチャンネル音声の場合は1ch目を取り出す
+    # if target_voice_data.ndim == 2:
+    #     target_voice_1ch_path = "./utils/target_voice_1ch.wav"
+    #     sf.write(target_voice_1ch_path, target_voice_data[:, 0], args.sample_rate)
+    #     target_voice_recog_text = asr_julius(target_voice_1ch_path) # （例） IT IS MARVELLOUS
+    #     os.remove(target_voice_1ch_path)
+    # else:    
+    #     target_voice_recog_text = asr_julius(target_voice_path) # （例） IT IS MARVELLOUS
+    # target_voice_recog_text = target_voice_recog_text.split() # （例） ['IT', 'IS', 'MARVELLOUS']
+    # # 混合音
+    # mixed_audio_data, _ = sf.read(mixed_audio_path)
+    # if mixed_audio_data.ndim == 2:
+    #     mixed_audio_1ch_path = "./utils/mixed_audio_1ch.wav"
+    #     sf.write(mixed_audio_1ch_path, mixed_audio_data[:, 0], args.sample_rate)
+    #     mixed_audio_recog_text = asr_julius(mixed_audio_1ch_path)
+    #     os.remove(mixed_audio_1ch_path)
+    # else:    
+    #     mixed_audio_recog_text = asr_julius(mixed_audio_path)
+    # mixed_audio_recog_text = mixed_audio_recog_text.split()
+    # # 処理後の目的音
+    # estimated_target_voice_data, _ = sf.read(estimated_target_voice_path)
+    # if estimated_target_voice_data.ndim == 2:
+    #     estimated_target_voice_1ch_path = "./utils/estimated_target_voice_1ch.wav"
+    #     sf.write(estimated_target_voice_1ch_path, estimated_target_voice_data[:, 0], args.sample_rate)
+    #     estimated_voice_recog_text = asr_julius(estimated_target_voice_1ch_path)
+    #     os.remove(estimated_target_voice_1ch_path)
+    # else:    
+    #     estimated_voice_recog_text = asr_julius(mixed_audio_path)
+    # estimated_voice_recog_text = estimated_voice_recog_text.split()
+    # # WERを計算
+    # clean_recog_result_save_path = os.path.join(recog_result_dir, 'clean.txt')
+    # mix_recog_result_save_path = os.path.join(recog_result_dir, 'mix.txt')
+    # est_recog_result_save_path = os.path.join(recog_result_dir, 'est.txt')
+    # wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
+    # wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
+    # wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
 
     print("============================音源分離性能===============================")
     print("SDR_mix: {:.3f}, SIR_mix: {:.3f}, SAR_mix: {:.3f}".format(sdr_mix, sir_mix, sar_mix))

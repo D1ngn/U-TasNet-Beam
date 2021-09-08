@@ -63,7 +63,7 @@ def audio_eval(sample_rate, target_audio_path, interference_audio_path, mixed_au
         sir_est = reference_result[2][0]
         sar_est = reference_result[3][0]
     else:
-        print("number of audio channels are incorrect")
+        print("The number of audio channels is incorrect")
 
     return sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est
 

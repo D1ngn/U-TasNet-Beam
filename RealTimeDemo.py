@@ -229,8 +229,8 @@ if __name__ == "__main__":
     print("使用デバイス：" , device)
 
     # JuliusサーバのURL
-    # url = "http://192.168.10.101:8000/asr_julius"
-    url = "http://192.168.10.116:8000/asr_julius" # Jetson Xavierではこっちを使用
+    url = "http://192.168.10.101:8000/asr_julius"
+    # url = "http://192.168.10.116:8000/asr_julius" # Jetson Xavierではこっちを使用
     ses = requests.Session()
 
     wave_dir = "./audio_data/rec/"

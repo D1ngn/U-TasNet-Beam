@@ -21,6 +21,8 @@ inference_speech_recognition_speaker_separation_only.py
 inference_speech_recognition_two_speakers_for_mask_display.py
 inference_speech_recognition_two_speakers.py
 inference_speech_recognition.py
+inference_using_record_voice.py
+inference_using_record_voice_speaker_separation_only.py
 
 models_quantized.py
 
@@ -29,6 +31,7 @@ RealTimeDemo_backup.py
 RealTimeDemo_speed_test.py
 RealTimeDemo_without_localization_asr.py
 RealTimeDemo_only_speaker_separation.py
+RealTimeDemo_azure_kinect.py
 
 training_acoustic_spatial.py
 training_backup.py
