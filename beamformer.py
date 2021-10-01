@@ -7,7 +7,7 @@ from scipy.linalg import eigh
 import pyroomacoustics as pa # 音源定位用
 
 
-# マスクと入力信号から共分散行列（空間相関行列）を推定
+# マスクと混合音声から共分散行列（空間相関行列）を推定
 def estimate_covariance_matrix(complex_spec, mask):
     """
     complex_spec: マイクロホン入力信号 (num_microphones, freq_bins, time_frames)
@@ -20,6 +20,22 @@ def estimate_covariance_matrix(complex_spec, mask):
     sum_mask = np.maximum(np.sum(mask, axis=-1), 1e-18)[:, np.newaxis, np.newaxis]
     """sum_mask: (freq_bins, num_microphones=1, num_microphones=1)"""
     spatial_covariance_matrix /= sum_mask
+    """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
+    # 固有値分解をして半正定値行列に変換
+    eigenvalues, eigenvectors = np.linalg.eigh(spatial_covariance_matrix)
+    """eigenvalues: (freq_bins, num_microphones), eigenvectors: (freq_bins, num_microphones, num_microphones)"""
+    eigenvalues[np.real(eigenvalues) < 1e-18] = 1e-18 # 固有値が0より小さい場合は0に置き換える
+    spatial_covariance_matrix = np.einsum("fmi,fi,fni->fmn", eigenvectors, eigenvalues, np.conjugate(eigenvectors))
+    """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
+    return spatial_covariance_matrix
+
+# 信号の複素スペクトログラムのみから共分散行列（空間相関行列）を推定
+def estimate_covariance_matrix_sig(complex_spec):
+    """
+    complex_spec: 入力複素スペクトログラム (num_channles, freq_bins, time_frames)
+    """
+    # 空間相関行列を算出
+    spatial_covariance_matrix = np.einsum("mft,nft->fmn", complex_spec, np.conjugate(complex_spec))
     """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
     # 固有値分解をして半正定値行列に変換
     eigenvalues, eigenvectors = np.linalg.eigh(spatial_covariance_matrix)

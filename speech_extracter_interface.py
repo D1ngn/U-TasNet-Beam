@@ -21,14 +21,13 @@ import socket
 import subprocess
 
 
-# マスクビームフォーマ関連
-from models import FCMaskEstimator, BLSTMMaskEstimator, UnetMaskEstimator_kernel3, UnetMaskEstimator_kernel3_single_mask
-from beamformer import estimate_covariance_matrix, condition_covariance, estimate_steering_vector, mvdr_beamformer, gev_beamformer, sparse, ds_beamformer, mwf, mvdr_beamformer_two_speakers, localize_music
-from utils.utilities import AudioProcess
+# ニューラルビームフォーマ関連
+from models import MCComplexUnet, MCConvTasNet # 雑音・残響除去モデル、話者分離モデル各種
+from beamformer import estimate_covariance_matrix_sig, condition_covariance, estimate_steering_vector, mvdr_beamformer, gev_beamformer, ds_beamformer, mwf, mvdr_beamformer_two_speakers, localize_music
+from utils.utilities import AudioProcessForComplex
 # 話者識別用モデル
 from utils.embedder import SpeechEmbedder
-# 音源分離用モジュール 
-from asteroid.models import BaseModel
+from loss_func import solve_inter_channel_permutation_problem # マルチチャンネル話者分離時に使用
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -48,60 +47,70 @@ def speech_extracter(mixed_audio_data):
         """mixed_complex_spec: (num_channels, freq_bins, time_frames)"""
         # 残響除去手法を指定している場合は残響除去処理を実行
         if args.dereverb_type == 'WPE':
-            mixed_complex_spec, _ = audio_processor.dereverberation_wpe_multi(mixed_complex_spec)       
-        # モデルに入力できるように音声をミニバッチに分けながら振幅スペクトログラムに変換
-        mixed_amp_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data, args.chunk_size, device=device)
-        """mixed_amp_spec_batch: (batch_size, num_channels, freq_bins, time_frames)"""
+            mixed_complex_spec, _ = audio_processor.dereverberation_wpe_multi(mixed_complex_spec)    
+        # モデルに入力できるように音声をミニバッチに分けながら振幅＋位相スペクトログラムに変換
+        mixed_audio_data_for_model_input = torch.transpose(torch.from_numpy(mixed_audio_data).float(), 0, 1)
+        """mixed_audio_data_for_model_input: (num_channels, num_samples)"""
+        mixed_amp_phase_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data_for_model_input, args.batch_length)
+        """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
         # 発話とそれ以外の雑音の時間周波数マスクを推定
-        speech_mask_output, noise_mask_output = model(mixed_amp_spec_batch)
-        """speech_mask_output: (batch_size, num_channels, freq_bins, time_frames), noise_mask_output: (batch_size, num_channels, freq_bins, time_frames)"""
-        # ミニバッチに分けられたマスクを時間方向に結合し、混合音にかけて各音源のスペクトログラムを取得
-        multichannel_speech_spec, _ = audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_mask_output, args.chunk_size, args.target_aware_channel)
-        """multichannel_speech_spec: (num_channels, freq_bins, time_frames)"""
-        multichannel_noise_spec, estimated_noise_mask = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_mask_output, args.chunk_size, args.noise_aware_channel)
-        """multichannel_noise_spec: (num_channels, freq_bins, time_frames)"""
+        speech_amp_phase_spec_output, noise_amp_phase_spec_output = denoising_model(mixed_amp_phase_spec_batch)
+        """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
+        noise_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
+        # ミニバッチに分けられた振幅＋位相スペクトログラムを時間方向に結合
+        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.batch_length, args.target_aware_channel)
+        """multichannel_speech_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
+        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.batch_length, args.noise_aware_channel)
+        """multichannel_noise_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
+        # torch.stftを使用する場合
         # 発話のマルチチャンネルスペクトログラムを音声波形に変換
-        multichannel_denoised_data = audio_processor.spec_to_wave(multichannel_speech_spec, mixed_audio_data)
-        """multichannel_denoised_data: (num_samples, num_channels)"""
-        # 1ch分を取り出す
-        multichannel_denoised_data = multichannel_denoised_data[:, 0][:, np.newaxis]
-        """mixed_speech_data: (num_samples, num_channels=1)"""
+        multichannel_denoised_data = torch.istft(multichannel_speech_amp_phase_spec, n_fft=512, hop_length=160, \
+                                                    normalized=True, length=mixed_audio_data.shape[0], return_complex=False)
+        """multichannel_denoised_data: (num_channels, num_samples)"""
+        # 雑音のマルチチャンネルスペクトログラムを音声波形に変換
+        multichannel_noise_data = torch.istft(multichannel_noise_amp_phase_spec, n_fft=512, hop_length=160, \
+                                                    normalized=True, length=mixed_audio_data.shape[0], return_complex=False)
+        """multichannel_noise_data: (num_channels, num_samples)"""
+        # 話者分離モデルに入力できるようにバッチサイズの次元を追加
+        multichannel_denoised_data = torch.unsqueeze(multichannel_denoised_data, 0)
+        """multichannel_denoised_data: (batch_size, num_channels, num_samples)"""
         # 話者分離
-        separated_audio_data = audio_processor.speaker_separation(speaker_separation_model, multichannel_denoised_data)
-        """separated_audio_data: (num_sources, num_samples, num_channels)"""
-        # start_time_speeaker_selector = tm.perf_counter()
-        # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断）
-        target_speaker_id, speech_amp_spec_all = audio_processor.speaker_selector(embedder, separated_audio_data, ref_dvec, device=device)
-        """speech_amp_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""
-        # 雑音の振幅スペクトログラムを算出
-        noise_amp_spec = audio_processor.calc_amp_spec(multichannel_noise_spec)
-        """noise_amp_spec: (num_channels, freq_bins, time_frames)"""
-        # IRM計算（将来的にはマスクを使わず、信号から直接空間相関行列を算出できるようにする。あるいはcIRMを使う。） TODO
-        estimated_target_mask = np.sqrt(speech_amp_spec_all[target_speaker_id] ** 2 / np.maximum((np.sum(speech_amp_spec_all**2, axis=0) + noise_amp_spec ** 2), 1e-7))
-        """estimated_target_mask: (num_channels, freq_bins, time_frames)"""
-        estimated_interference_mask = np.zeros_like(estimated_target_mask)
-        for id in range(speech_amp_spec_all.shape[0]):
-            # 目的話者以外の話者の発話マスクを足し合わせる
+        separated_audio_data = speaker_separation_model(multichannel_denoised_data)
+        """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
+        # チャンネルごとに順序がばらばらな発話の順序を揃える
+        separated_audio_data = solve_inter_channel_permutation_problem(separated_audio_data)
+        """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
+        # PyTorchのテンソルをNumpy配列に変換
+        separated_audio_data = separated_audio_data.detach().numpy().copy() # CPU
+        # バッチの次元を消して転置
+        separated_audio_data = np.transpose(np.squeeze(separated_audio_data, 0), (0, 2, 1))
+        """separated_audio_data: (num_speakers, num_samples, num_channels)"""
+        # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断） →いずれはspeaker_selectorに統一する TODO
+        target_speaker_id, speech_complex_spec_all = audio_processor.speaker_selector_sig_ver(separated_audio_data, ref_dvec, embedder)
+        """speech_complex_spec_all: (num_speakers, num_channels, freq_bins, time_frames)"""
+        # 目的話者の発話の複素スペクトログラムを取得
+        multichannel_target_complex_spec = speech_complex_spec_all[target_speaker_id]
+        """multichannel_target_complex_spec: (num_channels, freq_bins, time_frames)"""
+        multichannel_interference_complex_spec = np.zeros_like(multichannel_target_complex_spec)
+        # 干渉話者の発話の複素スペクトログラムを取得
+        for id in range(speech_complex_spec_all.shape[0]):
+            # 目的話者以外の話者の複素スペクトログラムを足し合わせる
             if id == target_speaker_id:
                 pass
             else:
-                estimated_interference_mask += np.sqrt(speech_amp_spec_all[id] ** 2 / np.maximum((np.sum(speech_amp_spec_all**2, axis=0) + noise_amp_spec ** 2), 1e-7))
-        """estimated_interference_mask: (num_channels, freq_bins, time_frames)"""
-        # 複数チャンネルのうち1チャンネル分のマスクを算出
-        if channel_select_type == 'aware':
-            # 目的音と干渉音に近いチャンネルのマスクをそれぞれ使用（選択するチャンネルを変えて実験してみるのもあり）
-            estimated_target_mask = estimated_target_mask[args.target_aware_channel, :, :]
-            estimated_interference_mask = estimated_interference_mask[args.noise_aware_channel, :, :]
-        elif channel_select_type == 'median' or channel_select_type == 'single':
-            # 複数チャンネル間のマスク値の中央値をとる（median pooling）
-            estimated_target_mask = np.median(estimated_target_mask, axis=0)
-            estimated_interference_mask = np.median(estimated_interference_mask, axis=0)
-        """estimated_target_mask: (freq_bins, time_steps), estimated_interference_mask: (freq_bins, time_frames)"""
+                multichannel_interference_complex_spec += speech_complex_spec_all[id]
+        """multichannel_interference_complex_spec: (num_channels, freq_bins, time_frames)"""
+        # PyTorchのテンソルをnumpy配列に変換
+        multichannel_noise_data = multichannel_noise_data.detach().numpy().copy() # CPU
+        """multichannel_noise_data: (num_channels, num_samples)"""
+        # 雑音の複素スペクトログラムを算出
+        multichannel_noise_complex_spec = audio_processor.calc_complex_spec(multichannel_noise_data.T)
+        """multichannel_noise_complex_spec: (num_channels, freq_bins, time_frames)""" 
         # 目的音のマスクと雑音のマスクからそれぞれの空間共分散行列を推定
-        target_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_target_mask)
-        interference_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_interference_mask)
-        noise_covariance_matrix = estimate_covariance_matrix(mixed_complex_spec, estimated_noise_mask)
-        noise_covariance_matrix = condition_covariance(noise_covariance_matrix, 1e-6) # これがないと性能が大きく落ちる（雑音の共分散行列がスパースであるため？）
+        target_covariance_matrix = estimate_covariance_matrix_sig(multichannel_target_complex_spec)
+        interference_covariance_matrix = estimate_covariance_matrix_sig(multichannel_interference_complex_spec)
+        noise_covariance_matrix = estimate_covariance_matrix_sig(multichannel_noise_complex_spec)
+        noise_covariance_matrix = condition_covariance(noise_covariance_matrix, 1e-6) # これがないと性能が大きく落ちる（雑音の共分散行列のみで良い）
         # ビームフォーマによる雑音除去を実行
         if args.beamformer_type == 'MVDR':
             # target_steering_vectors = estimate_steering_vector(target_covariance_matrix)
@@ -115,8 +124,6 @@ def speech_extracter(mixed_audio_data):
             estimated_spec = ds_beamformer(mixed_complex_spec, target_steering_vectors)
         elif args.beamformer_type == "MWF":
             estimated_spec = mwf(mixed_complex_spec, target_covariance_matrix, noise_covariance_matrix)
-        elif args.beamformer_type == 'Sparse':
-            estimated_spec = sparse(mixed_complex_spec, estimated_target_mask) # マスクが正常に推定できているかどうかをテストする用
         else:
             print("Please specify the correct beamformer type")
         """estimated_spec: (num_channels, freq_bins, time_frames=blocksize)"""
@@ -154,8 +161,8 @@ if __name__ == "__main__":
     parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform')
     parser.add_argument('-hl', '--hop_length', type=int, default=160, help='number of audio samples between adjacent STFT columns')
     parser.add_argument('-twd', '--temp_wav_dir', type=str, default="./temp/", help='directory for storaging temporaly wave file')
-    parser.add_argument('-mt', '--model_type', type=str, default='Unet_single_mask', help='type of mask estimator model')
-    parser.add_argument('-sst', '--speaker_separator_type', type=str, default='conv_tasnet', help='type of speaker separator model')
+    parser.add_argument('-dmt', '--denoising_model_type', type=str, default='complex_unet', help='type of denoising model (FC or BLSTM or CNN or Unet or Unet_single_mask or Unet_single_mask_two_speakers)')
+    parser.add_argument('-ssmt', '--speaker_separation_model_type', type=str, default='conv_tasnet', help='type of speaker separator model (conv_tasnet)')
     parser.add_argument('-bt', '--beamformer_type', type=str, default='MVDR', help='type of beamformer (DS or MVDR or GEV or MWF)')
     parser.add_argument('-dt', '--dereverb_type', type=str, default='None', help='type of dereverb algorithm (None or WPE)')
     parser.add_argument('-ep', '--embedder_path', type=str, default="./utils/embedder.pt", help='path of pretrained embedder model')
@@ -198,67 +205,64 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("使用デバイス：" , device)
     # ネットワークモデルと学習済みのパラメータを保存したチェックポイントファイルのパスを指定
-    if args.model_type == 'BLSTM':
-        model = BLSTMMaskEstimator()
-        channel_select_type = 'median'
-        padding = False
-        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1201/ckpt_epoch70.pt" # BLSTM small
-    elif args.model_type == 'FC':
-        model = FCMaskEstimator()
-        channel_select_type = 'aware'
-        padding = False
-        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_FC_1202/ckpt_epoch80.pt" # FC small
-    elif args.model_type == 'Unet':
-        channel_select_type = 'aware'
-        padding = True
-        model = UnetMaskEstimator_kernel3()
-        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1208/ckpt_epoch110.pt" # U-Net aware channel
-    elif args.model_type == 'Unet_single_mask':
-        model = UnetMaskEstimator_kernel3_single_mask()
+    # ネットワークモデルの定義、チャンネルの選び方の指定、モデル入力時にパディングを行うか否かを指定
+    # 雑音（残響）除去モデル
+    if args.denoising_model_type == 'complex_unet':
+        denoising_model = MCComplexUnet()
         channel_select_type = 'single'
         padding = True
-        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_Unet_single_mask_median_multisteplr00001start_20210701/ckpt_epoch190.pt" # U-Net-single-mask
+        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_snr_loss_multisteplr00001start_20210922/ckpt_epoch490.pt" # Complex U-Net speech and noise output ch constant snr loss (signal base newest model)
     else:
-        pass
+        print("Please specify the correct denoising model type")
+    # 話者分離モデル
+    if args.speaker_separation_model_type == 'conv_tasnet':
+        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch370.pt"
+        speaker_separation_model = MCConvTasNet()
+    else:
+        print("Please specify the correct speaker separator type")
 
-    # 前処理クラスのインスタンスを作成
-    audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    # ネットワークをCPUまたはGPUへ
-    model.to(device)
+    # 音声処理クラスのインスタンスを作成
+    # audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+
     # 学習済みのパラメータをロード
-    model_params = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(model_params['model_state_dict'])
-    # Unetを使って推論
-    # ネットワークを推論モードへ
-    model.eval()
+    denoising_model_params = torch.load(checkpoint_path, map_location=device)
+    denoising_model.load_state_dict(denoising_model_params['model_state_dict'])
+    denoising_model.to(device) # モデルをCPUまたはGPUへ
+    denoising_model.eval() # ネットワークを推論モードへ
+    # print("モデルのパラメータ数：", count_parameters(model))
     # # 入力サンプルとともにTensorRTに変換
     # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513)).to(device)
-    # # model = torch2trt(model, [tmp])
-    # model = torch2trt(model, [tmp], fp16_mode=True) # 精度によってモード切り替え
-    # 話者分離モデルを指定
-    if args.speaker_separator_type == 'conv_tasnet':
-        # pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepclean_16k" # ConvTasNet 16kHz
-        pretrained_param_speaker_separation = "JorisCos/ConvTasNet_Libri2Mix_sepnoisy_16k" # ConvTasNet 16kHz noisy ← こっちの方が精度が高そう
-        # 話者分離モデルの学習済みパラメータをダウンロード
-        speaker_separation_model = BaseModel.from_pretrained(pretrained_param_speaker_separation)
-    # elif args.speaker_separator_type == 'sepformer':
-    speaker_separation_model.to(device)
+    # # denoising_model = torch2trt(denoising_model, [tmp])
+    # denoising_model = torch2trt(denoising_model, [tmp], fp16_mode=True) # 精度によってモード切り替え
+    # 話者分離モデルの学習済みパラメータをロード
+    speaker_separation_model_params = torch.load(checkpoint_path_for_speaker_separation_model, map_location=device)
+    speaker_separation_model.load_state_dict(speaker_separation_model_params['model_state_dict'])
+    speaker_separation_model.to(device) # モデルをCPUまたはGPUへ
+    speaker_separation_model.eval() # ネットワークを推論モードへ
+    # tmp = torch.ones(args.batch_length, 1)
+    # speaker_separation_model = torch2trt(speaker_separation_model, [tmp])
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
-    embedder.to(device)
     embed_params = torch.load(args.embedder_path, map_location=device)
     embedder.load_state_dict(embed_params)
+    embedder.to(device) # モデルをCPUまたはGPUへ
     embedder.eval()
     # 声を分離抽出したい人の発話サンプルをロードし、評価用に保存
     ref_speech_data, _ = sf.read(args.ref_speech_path)
-    # 発話サンプルの特徴量（ログメルスペクトログラム）をベクトルに変換
+    # シングルチャンネル音声の場合はチャンネルの次元を追加
     if ref_speech_data.ndim == 1:
         ref_speech_data = ref_speech_data[:, np.newaxis]
+    # 発話サンプルの特徴量（ログメルスペクトログラム）をベクトルに変換
     ref_complex_spec = audio_processor.calc_complex_spec(ref_speech_data)
     ref_log_mel_spec = audio_processor.calc_log_mel_spec(ref_complex_spec)
     ref_log_mel_spec = torch.from_numpy(ref_log_mel_spec).float().to(device)
+    # 入力サンプルとともにTensorRTに変換
+    # embedder = torch2trt(embedder, [torch.unsqueeze(ref_log_mel_spec[0], 0)])
     ref_dvec = embedder(ref_log_mel_spec[0]) # 入力は1ch分
     """ref_dvec: (embed_dim=256,)"""
+    # PyTorchのテンソルからnumpy配列に変換
+    ref_dvec = ref_dvec.detach().numpy().copy() # CPU
 
     # Nakbotクライアント（駆動側）から送られてきた音声データを受け取って処理
     # AF_INETはIPv4、SOCK_STREAMはTCPであることを表す

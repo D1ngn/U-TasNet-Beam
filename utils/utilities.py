@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchaudio
 import os
 import numpy as np
 import matplotlib as mpl
@@ -327,7 +328,415 @@ class AudioProcess():
         # return multi_complex_spec, multi_amp_spec, multi_log_mel_spec
         return multi_complex_spec, multi_amp_spec
         # return multi_complex_spec, multi_log_spec
+
+# データの前処理を行うクラス
+class AudioProcessForComplex():
+    def __init__(self, sample_rate, fft_size, hop_length, channel_select_type='single', padding=True, num_mels=40):
+        self.sample_rate = sample_rate
+        self.fft_size = fft_size
+        self.hop_length = hop_length
+#         self.channel_select_type = channel_select_type # 'single' or 'median' or 'aware'
+        self.padding = padding # True or False
+        # ログメルスペクトログラムを使用する場合
+        self.num_mels = num_mels
+        # U-Netを使用する場合
+        self.max_time_frames = 513
     
+    # データを標準化（平均0、分散1に正規化（Z-score Normalization））
+    def standardize(self, data):
+        data_mean = data.mean(keepdims=True)
+        data_std = data.std(keepdims=True, ddof=0) # 母集団の標準偏差（標本標準偏差を使用する場合はddof=1）
+        standardized_data = (data - data_mean) / data_std
+        return standardized_data
+    
+    # マルチチャンネルの複素スペクトログラムを算出
+    def calc_complex_spec(self, wav_data):
+        """wav_data: (num_samples, num_channels)"""
+        wav_data = np.require(wav_data, dtype=np.float32, requirements=['F']) # Fortran-contiguousに変換（これがないとエラーが出る）
+        multi_complex_spec = [] # それぞれのチャンネルの複素スペクトログラムを格納するリスト
+        for i in range(wav_data.shape[1]):
+            # オーディオデータをスペクトログラムに変換
+            complex_spec = librosa.core.stft(wav_data[:, i], n_fft=self.fft_size, hop_length=self.hop_length, win_length=None, window='hann')
+            multi_complex_spec.append(complex_spec)
+        multi_complex_spec = np.array(multi_complex_spec)
+        """multi_complex_spec: (num_channels, freq_bins, time_frames)"""
+        return multi_complex_spec
+
+    # 振幅スペクトログラムを算出
+    def calc_amp_spec(self, complex_spec):
+        """complex_spec: (num_channels, freq_bins, time_frames)"""
+        amp_spec = np.zeros_like(complex_spec, dtype=np.float32)
+        for i in range(complex_spec.shape[0]):
+            amp_spec[i] = np.abs(complex_spec[i])
+        """amp_spec: (num_channels, freq_bin, time_frames)"""
+        return amp_spec
+    
+    # 位相スペクトログラムを算出
+    def calc_phase_spec(self, complex_spec):
+        """complex_spec: (num_channels, freq_bins, time_frames)"""
+        phase_spec = np.zeros_like(complex_spec, dtype=np.float32)
+        for i in range(complex_spec.shape[0]):
+            phase_spec[i] = np.angle(complex_spec[i]) # ラジアン単位（-π ~ +π）
+        """amp_spec: (num_channels, freq_bin, time_frames)"""
+        return phase_spec
+    
+    # ログスペクトログラムを算出
+    def calc_log_spec(self, complex_spec):
+        """
+        complex_spec: (num_channels, freq_bins, time_frames)
+        """
+        log_spec = np.zeros_like(complex_spec, dtype='float32')
+        # チャンネルごとにログスペクトログラムに変換
+        for i in range(complex_spec.shape[0]):
+            power_spec = np.abs(complex_spec[i]) ** 2 # パワースペクトログラムを算出
+            log_spec[i] = 10.0 * np.log10(np.maximum(1e-10, power_spec)) # logがマイナス無限にならないように対数変換
+        """log_spec: (num_channels, num_mels, time_frames)"""
+        return log_spec
+    
+    # ログメルスペクトログラムを算出
+    def calc_log_mel_spec(self, complex_spec):
+        """
+        complex_spec: (num_channels, freq_bins, time_frames)
+        """
+        # メルフィルタバンクを生成
+        mel_fb = librosa.filters.mel(self.sample_rate, n_fft=self.fft_size, n_mels=self.num_mels)
+        log_mel_spec = np.zeros((complex_spec.shape[0], self.num_mels, complex_spec.shape[2]), dtype='float32')
+        # チャンネルごとにログメルスペクトログラムに変換
+        for i in range(complex_spec.shape[0]):
+            power_spec = np.abs(complex_spec[i]) ** 2 # パワースペクトログラムを算出
+            mel_power_spec = np.dot(mel_fb, power_spec) # メルフィルタバンクをかける
+            # log_mel_spec[i] = 10.0 * np.log10(np.maximum(1e-10, mel_power_spec)) # logがマイナス無限にならないように対数変換
+            log_mel_spec[i] = np.log10(np.maximum(1e-10, mel_power_spec)) # logがマイナス無限にならないように対数変換（VoiceFilterでの計算式に合わせる）
+        """log_mel_spec: (num_channels, num_mels, time_frames)"""
+        return log_mel_spec
+    
+    # マルチチャンネルスペクトログラムを音声波形に変換
+    def spec_to_wave(self, multi_channel_spec, original_audio_data):
+        """
+        multi_channel_spec: マルチチャンネルスペクトログラム (num_channels, freq_bins, time_frames)
+        original_audio_data: 長さの基準となる音声データ (num_channels, num_samples)
+        """
+        multi_channel_audio_data = np.zeros(original_audio_data.shape, dtype='float32') # マルチチャンネル音声波形を格納する配列
+        # 1chごとスペクトログラムを音声波形に変換
+        for i in range(multi_channel_spec.shape[0]):
+            estimated_voice_data = librosa.core.istft(multi_channel_spec[i, :, :], hop_length=self.hop_length)
+            # 0でパディングして長さを揃える TODO
+            estimated_voice_data = np.pad(estimated_voice_data, [0, original_audio_data.shape[0] - estimated_voice_data.shape[0]], "constant")
+            multi_channel_audio_data[:, i] = estimated_voice_data
+        """multichannel_audio_data: (num_samples, num_channels)"""
+        return multi_channel_audio_data
+    
+    # 話者分離
+    # 現在は1ch入力しかサポートしていない → 8ch分まとめて音源分離できるようにする TODO
+    def speaker_separation(self, separation_model, mixed_speech_data):
+        """
+        separation_model: 話者分離用のモデル（Conv-TasNet, Sepformer etc...）
+        mixed_speech_data: 複数の話者の発話が混ざった音声 (num_samples, num_channels)
+        """
+#         # 1ch分を取り出す
+#         mixed_speech_data = mixed_speech_data[:, 0][:, np.newaxis]
+#         """mixed_speech_data: (num_samples, num_channels=1)"""
+        mixed_speech_data = mixed_speech_data.transpose()
+        """mixed_speech_data: (num_channels=1, num_samples)"""
+        mixed_speech_data = mixed_speech_data.reshape(1, mixed_speech_data.shape[0], mixed_speech_data.shape[1])
+        """mixed_speech_data: (batch_size=1, num_channels, num_samples)"""
+        separated_audio_data = separation_model.separate(mixed_speech_data)
+        """separated_audio_data: (num_channels, num_sources, num_samples)"""
+        separated_audio_data = separated_audio_data.transpose(1, 2, 0)
+        """separated_audio_data: (num_sources, num_samples, num_channels)"""
+        return separated_audio_data
+
+    # 分離された発話のうちどれが目的話者の発話かを判断
+    def speaker_selector(self, embedder, multiple_speech_data, ref_dvec):
+#     def speaker_selector(self, embedder, multiple_speech_data, ref_dvec, interference_azimuth, file_num):
+        """
+        embedder: 話者識別モデル
+        multiple_speech_data: 複数の発話を含んだ音声データ (num_sources, num_samples, num_channels)
+        ref_dvec: 目的話者の発話サンプルの埋め込みベクトル (embed_dim=256,)
+        """
+        # 話者の埋め込みベクトルを用いて目的の話者の声を選出
+        # コサイン類似度の最大値を初期化
+        max_cos_similarity = 0
+        # 目的話者のIDを初期化
+        target_speaker_id = 0
+        for speaker_id, speech_data in enumerate(multiple_speech_data):
+            speech_complex_spec = self.calc_complex_spec(speech_data)
+            """speech_complex_spec: (num_channels, freq_bins, time_frames)"""
+            speech_amp_spec = self.calc_amp_spec(speech_complex_spec)
+            """speech_amp_spec: (num_channels, freq_bins, time_frames)"""
+            
+#             # 複素スペクトログラムをまとめる
+#             if speaker_id == 0:
+#                 speech_complex_spec_all = speech_complex_spec[np.newaxis, :, :, :]
+#             else:
+#                 speech_complex_spec_all = np.concatenate([speech_complex_spec_all, speech_complex_spec[np.newaxis, :, :, :]], axis=0)
+#             """speech_complex_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""
+            
+            # 振幅スペクトログラムをまとめる
+            if speaker_id == 0:
+                speech_amp_spec_all = speech_amp_spec[np.newaxis, :, :, :]
+            else:
+                speech_amp_spec_all = np.concatenate([speech_amp_spec_all, speech_amp_spec[np.newaxis, :, :, :]], axis=0)
+            """speech_amp_spec_all: (num_sources, num_channels, freq_bins, time_frames)"""    
+            # 発話の音声波形をログメルスペクトログラムに変換
+            speech_log_mel_spec = self.calc_log_mel_spec(speech_complex_spec)
+            """speech_log_mel_spec: (num_channels, num_mels, time_frames)"""
+            # numpy配列からPyTorchのテンソルに変換
+            speech_log_mel_spec = torch.from_numpy(speech_log_mel_spec.astype(np.float32)).clone()
+            # 発話の特徴量をベクトルに変換
+            speech_dvec = embedder(speech_log_mel_spec[0]) # 入力は1ch分
+            # PyTorchのテンソルからnumpy配列に変換
+            speech_dvec = speech_dvec.detach().numpy().copy() # CPU
+            """speech_dvec: (embed_dim=256,)"""
+            # 分離音の埋め込みベクトルと発話サンプルの埋め込みベクトルのコサイン類似度を計算
+            cos_similarity = np.dot(speech_dvec, ref_dvec) / (np.linalg.norm(speech_dvec)*np.linalg.norm(ref_dvec))
+            # コサイン類似度が最大となる発話を目的話者の発話と判断
+            if max_cos_similarity < cos_similarity:
+                max_cos_similarity = cos_similarity
+                target_speaker_id = speaker_id
+                
+#          # テスト用に話者分離後の音声を保存
+#         separated_dir = "./separated_voice/{}/".format(interference_azimuth)
+#         os.makedirs(separated_dir, exist_ok=True)
+#         separated_voice_path = os.path.join(separated_dir, "{}_separated_voice.wav".format(file_num))
+#         separated_voice_data = self.spec_to_wave(speech_complex_spec_all[target_speaker_id], multiple_speech_data[target_speaker_id])
+#         sf.write(separated_voice_path, separated_voice_data, 16000)
+            
+        return target_speaker_id, speech_amp_spec_all
+    
+    # 分離された発話のうちどれが目的話者の発話かを判断
+    def speaker_selector_sig_ver(self, multiple_speech_data, ref_dvec, embedder):
+#     def speaker_selector(self, embedder, multiple_speech_data, ref_dvec, interference_azimuth, file_num):
+        """
+        multiple_speech_data: 複数の発話を含んだ音声データ (num_speakers, num_samples, num_channels)
+        ref_dvec: 目的話者の発話サンプルの埋め込みベクトル (embed_dim=256,)
+        embedder: 話者識別モデル
+        """
+        # 話者の埋め込みベクトルを用いて目的の話者の声を選出
+        # コサイン類似度の最大値を初期化
+        max_cos_similarity = 0
+        # 目的話者のIDを初期化
+        target_speaker_id = 0
+        for speaker_id, speech_data in enumerate(multiple_speech_data):
+            speech_complex_spec = self.calc_complex_spec(speech_data)
+            """speech_complex_spec: (num_channels, freq_bins, time_frames)"""
+            # 複素スペクトログラムをまとめる
+            if speaker_id == 0:
+                speech_complex_spec_all = speech_complex_spec[np.newaxis, :, :, :]
+            else:
+                speech_complex_spec_all = np.concatenate([speech_complex_spec_all, speech_complex_spec[np.newaxis, :, :, :]], axis=0)
+            """speech_complex_spec_all: (num_speakers, num_channels, freq_bins, time_frames)"""
+            # 発話の音声波形をログメルスペクトログラムに変換
+            speech_log_mel_spec = self.calc_log_mel_spec(speech_complex_spec)
+            """speech_log_mel_spec: (num_channels, num_mels, time_frames)"""
+            # numpy配列からPyTorchのテンソルに変換
+            speech_log_mel_spec = torch.from_numpy(speech_log_mel_spec.astype(np.float32)).clone()
+            # 発話の特徴量をベクトルに変換
+            speech_dvec = embedder(speech_log_mel_spec[0]) # 入力は1ch分
+            # PyTorchのテンソルからnumpy配列に変換
+            speech_dvec = speech_dvec.detach().numpy().copy() # CPU
+            """speech_dvec: (embed_dim=256,)"""
+            # 分離音の埋め込みベクトルと発話サンプルの埋め込みベクトルのコサイン類似度を計算
+            cos_similarity = np.dot(speech_dvec, ref_dvec) / (np.linalg.norm(speech_dvec)*np.linalg.norm(ref_dvec))
+            # コサイン類似度が最大となる発話を目的話者の発話と判断
+            if max_cos_similarity < cos_similarity:
+                max_cos_similarity = cos_similarity
+                target_speaker_id = speaker_id
+                
+#          # テスト用に話者分離後の音声を保存
+#         separated_dir = "./separated_voice/{}/".format(interference_azimuth)
+#         os.makedirs(separated_dir, exist_ok=True)
+#         separated_voice_path = os.path.join(separated_dir, "{}_separated_voice.wav".format(file_num))
+#         separated_voice_data = self.spec_to_wave(speech_complex_spec_all[target_speaker_id], multiple_speech_data[target_speaker_id])
+#         sf.write(separated_voice_path, separated_voice_data, 16000)
+            
+        return target_speaker_id, speech_complex_spec_all
+    
+    # 過去のマイクロホン入力信号の算出
+    def get_past_signal(self, complex_spec, delay, taps):
+        """
+        complex_spec: マイクロホン入力信号 (num_microphones, freq_bins, time_frames)
+        delay: 遅延フレーム数
+        taps: 残響除去フィルタのタップ長
+        complex_spec_past: 過去のマイクロホン入力信号 (tap_length, M, Nk, Lt)
+        """
+        # 過去のマイクロホン入力信号の配列を準備
+        complex_spec_past = np.zeros(shape=(taps,) + np.shape(complex_spec), dtype=np.complex)
+        """complex_spec_past: (tap_length, num_microphones=2, freq_bins=513, time_frames=276)"""
+        for tau in range(taps):
+            complex_spec_past[tau, :, :, tau+delay:] = complex_spec[:, :, :-(tau+delay)]
+        """complex_spec_past: (tap_length, num_microphones, freq_bins, time_frames)"""
+        return complex_spec_past
+    
+    # WPEによるマルチチャンネル音声の残響除去
+    def dereverberation_wpe_multi(self, complex_spec, delay=3, taps=10, wpe_iterations=1):
+        """
+        complex_spec: マイクロホン入力信号 (num_microphones, freq_bins, time_frames)
+        wpe_iterations: パラメータの更新回数（リアルタイム処理する場合は1、精度を求めたければ3くらいがベストかも）
+        complex_spec_dereverb: 残響除去後の信号 (freq_bins, time_frames) 
+        """
+        # 過去のマイクロホン入力信号を算出
+        complex_spec_past = self.get_past_signal(complex_spec, delay, taps)
+        """complex_spec_past: (tap_length, num_microphones, freq_bins, time_frames)"""
+        # マイクロホン数・周波数・フレーム数・タップ長を取得する
+        M = np.shape(complex_spec)[0]
+        Nk = np.shape(complex_spec)[1]
+        Lt = np.shape(complex_spec)[2]
+        taps = np.shape(complex_spec_past)[0]
+        # 過去のマイクロホン入力信号の形式を変更
+        x_bar = np.reshape(complex_spec_past, [taps*M, Nk, Lt])
+        """x_bar: (num_taps*num_microphones, freq_bins, time_frames)"""
+        # 各時間周波数における音声の分散を算出
+        var = np.mean(np.square(np.abs(complex_spec)), axis=0)
+        var = np.maximum(var, 1.e-8) # 0除算を避けるため
+        # var = compute_lambda(complex_spec) # あるいはこれ
+        """var: (freq_bins, time_frames)"""
+        cost_buff = []
+        # 残響除去処理のループ
+        for t in range(wpe_iterations):
+            x_bar_var_inv = x_bar / var[np.newaxis, :, :]
+            """x_bar_var_inv: (num_taps*num_microphones, freq_bins, time_frames)"""
+            # 共分散行列を計算
+            x_bar_x_bar_h = np.einsum('ift,jft->fij', x_bar_var_inv, np.conjugate(x_bar))
+            """x_bar_x_bar_h: (freq_bins, num_taps*num_microphones, num_taps*num_microphones)"""
+            # 相関ベクトルを計算
+            correlation = np.einsum('ift,mft->fim', x_bar_var_inv, np.conjugate(complex_spec)) # TODO 
+            """correlation: (freq_bins, num_taps*num_microphones, num_microphones)"""
+            # # 残響除去フィルタを算出（A行列が特異行列（行列式が0となる行列）となり、逆行列が存在しない場合にエラーが出る）
+            # dereverb_filter = np.linalg.solve(x_bar_x_bar_h, correlation)
+            # 残響除去フィルタを算出（逆行列を確実に計算できるようにする）
+            dereverb_filter = stable_solve(x_bar_x_bar_h, correlation)
+            """dereverb_filter: (freq_bins, num_taps*num_microphones, num_microphones)"""
+            # 残響除去実施
+            complex_spec_reverb = np.einsum('fjm,jft->mft', np.conjugate(dereverb_filter), x_bar)
+            """complex_spec_reverb: (num_microphones, freq_bins, time_frames)"""
+            complex_spec_dereverb = complex_spec - complex_spec_reverb
+            """complex_spec_dereverb: (num_microphones, freq_bins, time_frames)"""
+            # パラメータ更新
+            var = np.mean(np.square(np.abs(complex_spec)), axis=0)
+            var = np.maximum(var, 1.e-8) # 0除算を避けるため
+            # コスト計算
+            cost = np.mean(np.log(var))
+            cost_buff.append(cost)
+            # # 消しすぎた分
+            # complex_spec_dereverb *= 3
+        return complex_spec_dereverb, cost_buff
+    
+    # 音声をミニバッチに分けながら振幅スペクトログラムに変換（サンプル数から1を引いているのは2バッチ目以降のサンプル数が0になるのを防ぐため）
+    def preprocess_mask_estimator(self, audio_data, batch_length):
+        # torch.stftを使う場合
+        batch_size = (audio_data.shape[1] - 1) // batch_length + 1 # （例） 3秒（48000サンプル）ごとに分ける場合72000だとバッチサイズは2
+        for batch_idx in range(batch_size):
+            # 音声をミニバッチに分ける
+            audio_data_partial = audio_data[:, batch_length*batch_idx:batch_length*(batch_idx+1)]
+            """audio_data_partial: (num_channels, num_samples)"""
+            # マルチチャンネル音声データを振幅スペクトログラム＋位相スペクトログラムに変換
+            amp_phase_spec_partial = self.__call__(audio_data_partial)
+            """amp_phase_spec_partial: (num_channels, freq_bins, time_frames, real_imaginary)"""
+            # 振幅スペクトログラムをバッチ方向に結合
+            if batch_idx == 0:
+                amp_phase_spec_batch = amp_phase_spec_partial.unsqueeze(0)
+            else:
+                # paddingがFalseの場合、別途長さを揃える必要があるためパディングする
+                if self.padding:
+                    amp_phase_spec_batch = torch.cat((amp_phase_spec_batch, amp_phase_spec_partial.unsqueeze(0)), dim=0)
+                else:
+                    pad = nn.ZeroPad2d((0, amp_phase_spec_batch.shape[3]-amp_phase_spec_partial.shape[2], 0, 0))
+                    amp_phase_spec_batch = torch.cat((amp_phase_spec_batch, pad(amp_phase_spec_partial.unsqueeze(0))), dim=0)
+        """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
+
+#         # librosa.stftを使う場合
+#         batch_size = (audio_data.shape[0] - 1) // batch_length + 1 # （例） 3秒（48000サンプル）ごとに分ける場合72000だとバッチサイズは2
+#         for batch_idx in range(batch_size):
+#             audio_data_partial = audio_data[batch_length*batch_idx:batch_length*(batch_idx+1), :]
+#             """audio_data_partial: (num_samples, num_channels)"""
+#             # マルチチャンネル音声データを複素スペクトログラムと振幅スペクトログラムに変換
+#             amp_phase_spec_partial = self.__call__(audio_data_partial)
+#             """amp_phase_spec_partial: (num_channels, freq_bins, time_frames, real_imaginary)"""
+#             # numpy形式のデータをpytorchのテンソルに変換
+#             amp_phase_spec_partial = torch.from_numpy(amp_phase_spec_partial.astype(np.float32)).clone()
+#             # 振幅スペクトログラムをバッチ方向に結合
+#             if batch_idx == 0:
+#                 amp_phase_spec_batch = amp_phase_spec_partial.unsqueeze(0)
+#             else:
+#                 # paddingがFalseの場合、別途長さを揃える必要があるためパディングする
+#                 if self.padding:
+#                     amp_phase_spec_batch = torch.cat((amp_phase_spec_batch, amp_phase_spec_partial.unsqueeze(0)), dim=0)
+#                 else:
+#                     pad = nn.ZeroPad2d((0, amp_phase_spec_batch.shape[3]-amp_phase_spec_partial.shape[2], 0, 0))
+#                     amp_phase_spec_batch = torch.cat((amp_phase_spec_batch, pad(amp_phase_spec_partial.unsqueeze(0))), dim=0)
+#         """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames)"""
+        return amp_phase_spec_batch
+    
+    # ミニバッチに分けられたマスクを時間方向に結合し、混合音にかけて各音源のスペクトログラムを取得
+    def postprocess_mask_estimator(self, mixed_complex_spec, amp_phase_spec, batch_length, aware_channel=0):
+        """
+        mixed_complex_spec: 混合音のスペクトログラム (num_channels, freq_bins, time_frames)
+        amp_phase_spec: 振幅＋位相スペクトログラム (batch_size, num_channels, freq_bins, time_frames, real_imaginary)
+        aware_channel: チャンネルの選択方式がawareの場合に選択するチャンネル（medianでは使わない） TODO
+        """            
+        # paddingされた分を削除する
+        if self.padding:
+            amp_phase_spec = amp_phase_spec[:, :, :, :int(batch_length/self.hop_length)+1, :]
+        """amp_phase_spec: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)""" 
+        # バッチ方向に並んだデータを時間方向につなげる
+        amp_phase_spec = amp_phase_spec.permute(1, 2, 0, 3, 4)
+        """amp_phase_spec: (num_channels, freq_bins, batch_size, time_frames, real_imaginary)""" 
+        amp_phase_spec = amp_phase_spec.contiguous().view(amp_phase_spec.shape[0], amp_phase_spec.shape[1], -1, amp_phase_spec.shape[4])
+        """amp_phase_spec: (num_channels, freq_bins, batch_size*time_frames, real_imaginary)""" 
+        # 時間方向の長さを元に戻す
+        amp_phase_spec = amp_phase_spec[:, :, :mixed_complex_spec.shape[2]]
+        """amp_phase_spec: (num_channels, freq_bins, batch_size*time_frames, real_imaginary)""" 
+        return amp_phase_spec
+    
+    # マルチチャンネル音声のロード
+    def load_audio(self, file_path):
+        waveform, _ = torchaudio.load(file_path)
+        """waveform: (num_channels, num_samples)"""
+        return waveform
+    
+    # マルチチャンネルの振幅スペクトログラムと位相スペクトログラムを算出
+    def calc_amp_phase_spec(self, waveform):
+        """waveform: (num_channels, num_samples)"""
+        multi_amp_phase_spec = torch.stft(input=waveform, n_fft=self.fft_size, hop_length=self.hop_length, normalized=True, return_complex=False)
+        """multi_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
+        return multi_amp_phase_spec
+    
+    # マルチチャンネルの複素スペクトログラムを時間フーレム方向に0パディング
+    def zero_pad_spec(self, complex_spec):
+        """complex_spec: (num_channels, freq_bins, time_frames, real-imaginary)"""
+        complex_spec_padded = nn.ZeroPad2d((0, 0, 0, self.max_time_frames-complex_spec.shape[2]))(complex_spec)
+        """complex_spec: (num_channels, freq_bins, time_frames=self.max_time_frames, real_imaginary)"""
+        return complex_spec_padded
+    
+    def __call__(self, wav_data):
+        # torch.stftを使う場合
+        # マルチチャンネル音声データを振幅スペクトログラム＋位相スペクトログラムに変換
+        multi_amp_phase_spec = self.calc_amp_phase_spec(wav_data)
+        """multi_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
+        # モデルに入力するデータのパディングを行う場合 
+        if self.padding:
+            # モデルの入力サイズに合わせて、スペクトログラムの後ろの部分を0埋め(パディング)
+            multi_amp_phase_spec = self.zero_pad_spec(multi_amp_phase_spec)
+            """multi_amp_phase_spec: (num_channels=8, freq_bins=257, time_frames=513, real_imaginary=2)"""
+#         # librosa.stftを使う場合
+#         # マルチチャンネル音声データをスペクトログラムに変換
+#         multi_complex_spec = self.calc_complex_spec(wav_data)
+#         """multi_complex_spec: (num_channels, freq_bins, time_frames)"""
+#         # モデルに入力するデータのパディングを行う場合 
+#         if self.padding:
+#             # モデルの入力サイズに合わせて、スペクトログラムの後ろの部分を0埋め(パディング)
+#             # データが三次元の時、(手前, 奥),(上,下), (左, 右)の順番でパディングを追加
+#             multi_complex_spec = np.pad(multi_complex_spec, [(0, 0), (0, 0), (0, self.max_time_frames-multi_complex_spec.shape[2])], 'constant')
+#             """multi_complex_spec: (num_channels=8, freq_bins=257, time_frames=513)"""
+#         # 振幅スペクトログラムと位相スペクトログラムを算出して結合
+#         multi_amp_spec = self.calc_amp_spec(multi_complex_spec)
+#         # 振幅スペクトログラムを標準化
+#         multi_amp_spec = self.standardize(multi_amp_spec)
+#         multi_phase_spec = self.calc_phase_spec(multi_complex_spec)
+#         multi_amp_phase_spec = np.concatenate([multi_amp_spec[:, :, :, np.newaxis], multi_phase_spec[:, :, :, np.newaxis]], axis=3)
+#         """multi_amp_phase_spec: (num_channels=8, freq_bins=257, time_frames=513, real_imaginary=2)"""
+        return multi_amp_phase_spec
     
 # WPEの分散計算用（現在は使っていない）
 def compute_lambda(dereverb, ctx=0):

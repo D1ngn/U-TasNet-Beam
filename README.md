@@ -43,10 +43,10 @@ $ pip3 install -r requirements.txt
    $ tar *.zip 
    ```
 
-   Second, run the following command to make training dataset for U-Net mask estimator
+   Second, open jupyter notebook and run `make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data_test_original_length_reverb.ipynb` to make training dataset for U-Net mask estimator
 
    ```
-   $ 
+   $ jupyter notebook
    ```
 
    
@@ -161,10 +161,10 @@ $ python3 training.py
       card 2: TAMAGO03 [TAMAGO-03], device 0: USB Audio [USB Audio]
       Subdevices: 1/1
       Subdevice #0: subdevice #0
-      ```
+     ```
 
 
-   
+
 
 
 
