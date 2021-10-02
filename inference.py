@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
-from torch2trt import torch2trt # Xavier上で動かす場合のみ
+# from torch2trt import torch2trt # Xavier上で動かす場合のみ
 # その他必要モジュールのimport
 import os
 import glob
