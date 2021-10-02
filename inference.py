@@ -284,10 +284,10 @@ def main():
     # チャンネルごとに順序がばらばらな発話の順序を揃える
     separated_audio_data = solve_inter_channel_permutation_problem(separated_audio_data)
     """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
-    finish_time_speech_separator = time.perf_counter()
-    duration_speech_separator = finish_time_speech_separator - start_time_speech_separator
-    rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
-    print("実時間比（speech_separator）：{:.3f}".format(rtf))
+    # finish_time_speech_separator = time.perf_counter()
+    # duration_speech_separator = finish_time_speech_separator - start_time_speech_separator
+    # rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
+    # print("実時間比（speech_separator）：{:.3f}".format(rtf))
     
     start_time_speeaker_selector = time.perf_counter()
     # PyTorchのテンソルをNumpy配列に変換
