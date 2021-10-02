@@ -206,7 +206,8 @@ if __name__ == "__main__":
     ss_port = 1234
     # JuliusサーバのURL
     # url = "http://192.168.10.101:8000/asr_julius"
-    url = "http://192.168.10.116:8000/asr_julius" # Jetson Xavierではこっちを使用
+    url = "http://192.168.10.116:8000/asr_julius" # Jetson Xavierではこれを使用
+    # url = "http://192.168.0.227:8000/asr_julius" # Jetson Xavier（研究室）ではこれを使用
     ses = requests.Session()
     ###########################################################################
 

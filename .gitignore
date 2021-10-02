@@ -49,3 +49,5 @@ torch-1.8.0-cp36-cp36m-linux_aarch64.whl
 music_localization_test.py
 
 mic_record_to_speech_extracter
+
+speech_extracter_interface_for_record.py
