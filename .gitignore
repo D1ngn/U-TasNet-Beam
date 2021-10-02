@@ -7,6 +7,7 @@ recog_result/
 test/
 temp/
 
+inference_mask_base.py
 inference_backup.py
 inference_dereverb.py
 inference_for_localization.py
@@ -21,17 +22,23 @@ inference_speech_recognition_speaker_separation_only.py
 inference_speech_recognition_two_speakers_for_mask_display.py
 inference_speech_recognition_two_speakers.py
 inference_speech_recognition.py
+inference_using_record_voice.py
+inference_using_record_voice_mask_base.py
+inference_using_record_voice_speaker_separation_only.py
 
 models_quantized.py
+models_test.py
 
 RealTimeAudioProcess.py
 RealTimeDemo_backup.py
 RealTimeDemo_speed_test.py
 RealTimeDemo_without_localization_asr.py
 RealTimeDemo_only_speaker_separation.py
+RealTimeDemo_azure_kinect.py
 
 training_acoustic_spatial.py
 training_backup.py
+training_mask_base.py
 
 evaluate_mask_beamformer_azimuth_wise.ipynb
 
@@ -43,11 +50,17 @@ asr_client_julius.py
 asr_client_julius_simple.py
 
 torchvision/
+torchvision_0.9.0
 torch-1.8.0-cp36-cp36m-linux_aarch64.whl
+torch-1.9.0-cp36-cp36m-linux_aarch64.whl
 .python-version
 
 music_localization_test.py
 
 mic_record_to_speech_extracter
 
+vad_test.py
+loss_test.py
+
+speech_extracter_interface_mask_base.py
 speech_extracter_interface_for_record.py

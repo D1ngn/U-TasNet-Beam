@@ -4,10 +4,10 @@ from mpl_toolkits.mplot3d import Axes3D # 3次元描画用
 import seaborn as sns
 sns.set()
 from scipy.linalg import eigh
+import pyroomacoustics as pa # 音源定位用
 
 
-
-# マスクと入力信号から共分散行列（空間相関行列）を推定
+# マスクと混合音声から共分散行列（空間相関行列）を推定
 def estimate_covariance_matrix(complex_spec, mask):
     """
     complex_spec: マイクロホン入力信号 (num_microphones, freq_bins, time_frames)
@@ -20,6 +20,22 @@ def estimate_covariance_matrix(complex_spec, mask):
     sum_mask = np.maximum(np.sum(mask, axis=-1), 1e-18)[:, np.newaxis, np.newaxis]
     """sum_mask: (freq_bins, num_microphones=1, num_microphones=1)"""
     spatial_covariance_matrix /= sum_mask
+    """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
+    # 固有値分解をして半正定値行列に変換
+    eigenvalues, eigenvectors = np.linalg.eigh(spatial_covariance_matrix)
+    """eigenvalues: (freq_bins, num_microphones), eigenvectors: (freq_bins, num_microphones, num_microphones)"""
+    eigenvalues[np.real(eigenvalues) < 1e-18] = 1e-18 # 固有値が0より小さい場合は0に置き換える
+    spatial_covariance_matrix = np.einsum("fmi,fi,fni->fmn", eigenvectors, eigenvalues, np.conjugate(eigenvectors))
+    """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
+    return spatial_covariance_matrix
+
+# 信号の複素スペクトログラムのみから共分散行列（空間相関行列）を推定
+def estimate_covariance_matrix_sig(complex_spec):
+    """
+    complex_spec: 入力複素スペクトログラム (num_channles, freq_bins, time_frames)
+    """
+    # 空間相関行列を算出
+    spatial_covariance_matrix = np.einsum("mft,nft->fmn", complex_spec, np.conjugate(complex_spec))
     """spatial_covariance_matrix: (freq_bins, num_microphones, num_microphones)"""
     # 固有値分解をして半正定値行列に変換
     eigenvalues, eigenvectors = np.linalg.eigh(spatial_covariance_matrix)
@@ -307,6 +323,22 @@ def mwf(complex_spec, Rs, Rn):
 #         #     steering_vector[i] = np.exp(-1j * 2 * np.pi * frequency * delay)
 #         return steering_vector
 
+# MUSIC法を用いた音源定位
+def localize_music(spec, mic_alignments, sample_rate, fft_size, freq_range=[200, 3000]):
+    """
+    spec: (num_channels, freq_bins, time_frames)
+    mic_alignments: (3D coordinates [m], num_microphones)
+    """
+    # MUSIC法を用いて音源定位（cは音速）
+    doa = pa.doa.algorithms['MUSIC'](mic_alignments, sample_rate, fft_size, c=343., num_src=1) # Construct the new DOA object
+    doa.locate_sources(spec, freq_range=freq_range)
+    speaker_azimuth = doa.azimuth_recon / np.pi * 180.0 # rad→deg
+    # 0°〜360°表記を-180°〜180°表記に変更
+    if speaker_azimuth[0] > 180:
+        speaker_azimuth = int(speaker_azimuth[0] - 360)
+    else:
+        speaker_azimuth = int(speaker_azimuth[0])
+    return speaker_azimuth
 
 # ステアリングベクトルを算出
 def calculate_steering_vector(mic_alignments, angle, frequency, sound_speed=340, is_use_far=False):

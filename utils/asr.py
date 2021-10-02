@@ -34,16 +34,16 @@ class ASR():
 def asr_julius(input_file_path):
     temp_file = "julius_asr_recog_result.txt"
     # juliusによる音声認識を実行し、結果をファイルに出力
-    # # 混合ガウスモデル（GMM）ベースの音響モデルを用いる場合→今は「前に進め」、「後ろに退がれ」など（オリジナルの単語辞書に登録されたもの）を認識
-    # asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-gmm.jconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
-    # DNNベースの音響モデルを用いる場合→今はさまざまな日本語を認識（英語は不可）
-    asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf ~/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
+    # 混合ガウスモデル（GMM）ベースの音響モデルを用いる場合→今は「前に進め」、「後ろに退がれ」など（オリジナルの単語辞書に登録されたもの）を認識
+    asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-gmm.jconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
+    # # DNNベースの音響モデルを用いる場合→今はさまざまな日本語を認識（英語は不可）
+    # asr_cmd = "echo {} | julius -C ~/julius/dictation-kit-4.5/main.jconf -C ~/julius/dictation-kit-4.5/am-dnn.jconf -dnnconf ~/julius/dictation-kit-4.5/julius.dnnconf -nostrip -input rawfile -quiet > {}".format(input_file_path, temp_file)
     subprocess.call(asr_cmd, shell=True)
     # 出力ファイルから認識結果の部分のみを抽出
     with open(temp_file) as f:
         lines = f.readlines()
     recog_text_line = [line.strip() for line in lines if line.startswith('sentence1')] # "sentence1"から始まる行をサーチ
-    recog_result = recog_text_line[0][12:-2] # "sentence1: "から"。"の間の文章を抽出
+    recog_result = recog_text_line[0][12:] # "sentence1: "から文末までの文章を抽出
     # 余分なファイルが残らないように削除
     os.remove(temp_file)
     return recog_result
