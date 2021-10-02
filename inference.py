@@ -20,7 +20,7 @@ import soundfile as sf
 import warnings
 warnings.simplefilter('ignore')
 
-from models import MCComplexUnet, MCConvTasNet # 雑音・残響除去モデル、話者分離モデル各種
+from models import MCComplexUnet, MCConvTasNet # 雑音・残響除去モデル、話者分離モデル
 from beamformer import estimate_covariance_matrix_sig, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, ds_beamformer, mwf, localize_music # ビームフォーマ各種
 from utils.utilities import AudioProcessForComplex, spec_plot, wave_plot, count_parameters # 音声処理用
 from utils.embedder import SpeechEmbedder # 話者識別用
@@ -289,7 +289,7 @@ def main():
     # rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
     # print("実時間比（speech_separator）：{:.3f}".format(rtf))
     
-    start_time_speeaker_selector = time.perf_counter()
+    # start_time_speeaker_selector = time.perf_counter()
     # PyTorchのテンソルをNumpy配列に変換
     separated_audio_data = separated_audio_data.cpu().detach().numpy().copy() # CPU
     # バッチの次元を消して転置

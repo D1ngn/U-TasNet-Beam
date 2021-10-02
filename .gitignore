@@ -31,6 +31,7 @@ models_test.py
 
 RealTimeAudioProcess.py
 RealTimeDemo_backup.py
+RealTimeDemo_mask_base.py
 RealTimeDemo_speed_test.py
 RealTimeDemo_without_localization_asr.py
 RealTimeDemo_only_speaker_separation.py
