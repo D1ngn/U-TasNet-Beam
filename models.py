@@ -855,25 +855,25 @@ class MCComplexUnet(nn.Module):
 #         # output (speech only)
 #         self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=90, out_channels=8, padding=(1,1), last_layer=True)
 
-#         # チャンネル数大きく変化
-#         # downsampling/encoding
-#         self.downsample0 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=8, out_channels=16, padding=(1,1))
-#         self.downsample1 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=16, out_channels=32, padding=(1,1))
-#         self.downsample2 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=64, padding=(1,1))
-#         self.downsample3 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=64, out_channels=128, padding=(1,1))
-#         self.downsample4 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=128, out_channels=256, padding=(1,1))
-#         self.downsample5 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=256, out_channels=512, padding=(1,1))
-#         # upsampling/decoding
-#         self.upsample0 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=512, out_channels=256, padding=(1,1))
-#         self.upsample1 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=512, out_channels=128, padding=(1,1))
-#         self.upsample2 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=256, out_channels=64, padding=(1,1))
-#         self.upsample3 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=128, out_channels=32, padding=(1,1))
-#         self.upsample4 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=64, out_channels=16, padding=(1,1))
-#         # output (speech only)
-#         self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
-#         # output (speech and noise)
-#         self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
-#         self.out_layer_noise = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
+        # # チャンネル数大きく変化
+        # # downsampling/encoding
+        # self.downsample0 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=8, out_channels=16, padding=(1,1))
+        # self.downsample1 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=16, out_channels=32, padding=(1,1))
+        # self.downsample2 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=64, padding=(1,1))
+        # self.downsample3 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=64, out_channels=128, padding=(1,1))
+        # self.downsample4 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=128, out_channels=256, padding=(1,1))
+        # self.downsample5 = Encoder(filter_size=(3,3), stride_size=(2,2), in_channels=256, out_channels=512, padding=(1,1))
+        # # upsampling/decoding
+        # self.upsample0 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=512, out_channels=256, padding=(1,1))
+        # self.upsample1 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=512, out_channels=128, padding=(1,1))
+        # self.upsample2 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=256, out_channels=64, padding=(1,1))
+        # self.upsample3 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=128, out_channels=32, padding=(1,1))
+        # self.upsample4 = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=64, out_channels=16, padding=(1,1))
+        # # # output (speech only)
+        # # self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
+        # # output (speech and noise)
+        # self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
+        # self.out_layer_noise = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
         
     def forward(self, x, is_istft=False):
         # downsampling/encoding

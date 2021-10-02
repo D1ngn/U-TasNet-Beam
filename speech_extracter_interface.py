@@ -50,17 +50,18 @@ def speech_extracter(mixed_audio_data):
             mixed_complex_spec, _ = audio_processor.dereverberation_wpe_multi(mixed_complex_spec)    
         # モデルに入力できるように音声をミニバッチに分けながら振幅＋位相スペクトログラムに変換
         mixed_audio_data_for_model_input = torch.transpose(torch.from_numpy(mixed_audio_data).float(), 0, 1)
+        mixed_audio_data_for_model_input = mixed_audio_data_for_model_input.to(device) # モデルをCPUまたはGPUへ
         """mixed_audio_data_for_model_input: (num_channels, num_samples)"""
-        mixed_amp_phase_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data_for_model_input, args.batch_length)
+        mixed_amp_phase_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data_for_model_input, args.chunk_size)
         """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
         # 発話とそれ以外の雑音の時間周波数マスクを推定
         speech_amp_phase_spec_output, noise_amp_phase_spec_output = denoising_model(mixed_amp_phase_spec_batch)
         """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
         noise_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
         # ミニバッチに分けられた振幅＋位相スペクトログラムを時間方向に結合
-        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.batch_length, args.target_aware_channel)
+        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.chunk_size, args.target_aware_channel)
         """multichannel_speech_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
-        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.batch_length, args.noise_aware_channel)
+        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.chunk_size, args.noise_aware_channel)
         """multichannel_noise_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
         # torch.stftを使用する場合
         # 発話のマルチチャンネルスペクトログラムを音声波形に変換
@@ -81,12 +82,12 @@ def speech_extracter(mixed_audio_data):
         separated_audio_data = solve_inter_channel_permutation_problem(separated_audio_data)
         """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
         # PyTorchのテンソルをNumpy配列に変換
-        separated_audio_data = separated_audio_data.detach().numpy().copy() # CPU
+        separated_audio_data = separated_audio_data.cpu().detach().numpy().copy() # CPU
         # バッチの次元を消して転置
         separated_audio_data = np.transpose(np.squeeze(separated_audio_data, 0), (0, 2, 1))
         """separated_audio_data: (num_speakers, num_samples, num_channels)"""
         # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断） →いずれはspeaker_selectorに統一する TODO
-        target_speaker_id, speech_complex_spec_all = audio_processor.speaker_selector_sig_ver(separated_audio_data, ref_dvec, embedder)
+        target_speaker_id, speech_complex_spec_all = audio_processor.speaker_selector_sig_ver(separated_audio_data, ref_dvec, embedder, device)
         """speech_complex_spec_all: (num_speakers, num_channels, freq_bins, time_frames)"""
         # 目的話者の発話の複素スペクトログラムを取得
         multichannel_target_complex_spec = speech_complex_spec_all[target_speaker_id]
@@ -101,7 +102,7 @@ def speech_extracter(mixed_audio_data):
                 multichannel_interference_complex_spec += speech_complex_spec_all[id]
         """multichannel_interference_complex_spec: (num_channels, freq_bins, time_frames)"""
         # PyTorchのテンソルをnumpy配列に変換
-        multichannel_noise_data = multichannel_noise_data.detach().numpy().copy() # CPU
+        multichannel_noise_data = multichannel_noise_data.cpu().detach().numpy().copy() # CPU
         """multichannel_noise_data: (num_channels, num_samples)"""
         # 雑音の複素スペクトログラムを算出
         multichannel_noise_complex_spec = audio_processor.calc_complex_spec(multichannel_noise_data.T)
@@ -156,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument('-dm', '--denoising_mode', action='store_true', help='whether model denoises audio or not')
     parser.add_argument('-mg', '--mic_gain', type=int, default=1, help='Microphone gain')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate')
-    parser.add_argument('-cs', '--chunk_size', type=int, default=48000, help='chunk size of mask estimator and beamformer input')
+    parser.add_argument('-cs', '--chunk_size', type=int, default=48000, help='chunk size of denoising model input')
     parser.add_argument('-c', '--channels', type=int, default=8, help='number of input channels')
     parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform')
     parser.add_argument('-hl', '--hop_length', type=int, default=160, help='number of audio samples between adjacent STFT columns')
@@ -217,7 +218,7 @@ if __name__ == "__main__":
         print("Please specify the correct denoising model type")
     # 話者分離モデル
     if args.speaker_separation_model_type == 'conv_tasnet':
-        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch370.pt"
+        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch630.pt"
         speaker_separation_model = MCConvTasNet()
     else:
         print("Please specify the correct speaker separator type")
@@ -263,7 +264,7 @@ if __name__ == "__main__":
     ref_dvec = embedder(ref_log_mel_spec[0]) # 入力は1ch分
     """ref_dvec: (embed_dim=256,)"""
     # PyTorchのテンソルからnumpy配列に変換
-    ref_dvec = ref_dvec.detach().numpy().copy() # CPU
+    ref_dvec = ref_dvec.cpu().detach().numpy().copy() # CPU
 
     # Nakbotクライアント（駆動側）から送られてきた音声データを受け取って処理
     # AF_INETはIPv4、SOCK_STREAMはTCPであることを表す

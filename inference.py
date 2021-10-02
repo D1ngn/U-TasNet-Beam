@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data as data
-# from torch2trt import torch2trt # Xavier上で動かす場合のみ
+from torch2trt import torch2trt # Xavier上で動かす場合のみ
 # その他必要モジュールのimport
 import os
 import glob
@@ -34,7 +34,7 @@ def main():
     # コマンドライン引数を受け取る
     parser = argparse.ArgumentParser(description='Real time voice separation')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate') # サンプリング周波数
-    parser.add_argument('-bl', '--batch_length', type=int, default=48000, help='batch size of mask estimator and beamformer input') # 音声をバッチ処理する際の1バッチ当たりのサンプル数
+    parser.add_argument('-bl', '--batch_length', type=int, default=48000, help='batch length of denoising model input') # 音声をバッチ処理する際の1バッチ当たりのサンプル数
     parser.add_argument('-c', '--channels', type=int, default=8, help='number of input channels') # マイクのチャンネル数
     parser.add_argument('-fs', '--fft_size', type=int, default=512, help='size of fast fourier transform') # 高速フーリエ変換のフレームサイズ
     parser.add_argument('-hl', '--hop_length', type=int, default=160, help='number of audio samples between adjacent STFT columns') # 高速フーリエ変換におけるフレームのスライド幅
@@ -175,7 +175,7 @@ def main():
         print("Please specify the correct denoising model type")
     # 話者分離モデル
     if args.speaker_separation_model_type == 'conv_tasnet':
-        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch560.pt"
+        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch630.pt"
         speaker_separation_model = MCConvTasNet()
     else:
         print("Please specify the correct speaker separator type")
@@ -191,7 +191,8 @@ def main():
     denoising_model.eval() # ネットワークを推論モードへ
     # print("モデルのパラメータ数：", count_parameters(model))
     # # 入力サンプルとともにTensorRTに変換
-    # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513)).to(device)
+    # tmp = torch.ones((1, args.channels, int(args.fft_size/2)+1, 513, 2)).to(device)
+    # print(tmp.shape)
     # # denoising_model = torch2trt(denoising_model, [tmp])
     # denoising_model = torch2trt(denoising_model, [tmp], fp16_mode=True) # 精度によってモード切り替え
     # 話者分離モデルの学習済みパラメータをロード
@@ -199,8 +200,10 @@ def main():
     speaker_separation_model.load_state_dict(speaker_separation_model_params['model_state_dict'])
     speaker_separation_model.to(device) # モデルをCPUまたはGPUへ
     speaker_separation_model.eval() # ネットワークを推論モードへ
-    # tmp = torch.ones(args.batch_length, 1)
-    # speaker_separation_model = torch2trt(speaker_separation_model, [tmp])
+    # # 入力サンプルとともにTensorRTに変換
+    # tmp_2 = torch.ones((1, args.channels, 48000)).to(device)
+    # # denoising_model = torch2trt(denoising_model, [tmp])
+    # speaker_separation_model = torch2trt(speaker_separation_model, [tmp_2], fp16_mode=True) # 精度によってモード切り替え
     # 話者識別モデルの学習済みパタメータをロード（いずれはhparamsでパラメータを指定できる様にする TODO）
     embedder = SpeechEmbedder()
     embed_params = torch.load(args.embedder_path, map_location=device)
@@ -224,8 +227,8 @@ def main():
     """ref_dvec: (embed_dim=256,)"""
     # PyTorchのテンソルからnumpy配列に変換
     ref_dvec = ref_dvec.cpu().detach().numpy().copy() # CPU
-    # 音声認識用のインスタンスを生成
-    asr_ins = ASR(lang='eng')
+    # # 音声認識用のインスタンスを生成
+    # asr_ins = ASR(lang='eng')
 
     # 処理の開始時間
     start_time = time.perf_counter()
@@ -245,9 +248,9 @@ def main():
     mixed_audio_data_for_model_input = torch.transpose(torch.from_numpy(mixed_audio_data).float(), 0, 1)
     mixed_audio_data_for_model_input = mixed_audio_data_for_model_input.to(device) # モデルをCPUまたはGPUへ
     """mixed_audio_data_for_model_input: (num_channels, num_samples)"""
+    # start_time_denoiser = time.perf_counter()
     mixed_amp_phase_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data_for_model_input, args.batch_length)
     """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
-    
     # 発話とそれ以外の雑音の時間周波数マスクを推定
     speech_amp_phase_spec_output, noise_amp_phase_spec_output = denoising_model(mixed_amp_phase_spec_batch)
     """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
@@ -266,7 +269,12 @@ def main():
     multichannel_noise_data = torch.istft(multichannel_noise_amp_phase_spec, n_fft=512, hop_length=160, \
                                                 normalized=True, length=mixed_audio_data.shape[0], return_complex=False)
     """multichannel_noise_data: (num_channels, num_samples)"""
+    # finish_time_denoiser = time.perf_counter()
+    # duration_speech_separator = finish_time_denoiser - start_time_denoiser
+    # rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
+    # print("実時間比（denoisor）：{:.3f}".format(rtf))
 
+    # start_time_speech_separator = time.perf_counter()
     # 話者分離モデルに入力できるようにバッチサイズの次元を追加
     multichannel_denoised_data = torch.unsqueeze(multichannel_denoised_data, 0)
     """multichannel_denoised_data: (batch_size, num_channels, num_samples)"""
@@ -276,8 +284,12 @@ def main():
     # チャンネルごとに順序がばらばらな発話の順序を揃える
     separated_audio_data = solve_inter_channel_permutation_problem(separated_audio_data)
     """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
+    finish_time_speech_separator = time.perf_counter()
+    duration_speech_separator = finish_time_speech_separator - start_time_speech_separator
+    rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
+    print("実時間比（speech_separator）：{:.3f}".format(rtf))
     
-    # start_time_speeaker_selector = time.perf_counter()
+    start_time_speeaker_selector = time.perf_counter()
     # PyTorchのテンソルをNumpy配列に変換
     separated_audio_data = separated_audio_data.cpu().detach().numpy().copy() # CPU
     # バッチの次元を消して転置
@@ -289,7 +301,7 @@ def main():
     # print("ID of the target speaker:", target_speaker_id)
     # finish_time_speeaker_selector = time.perf_counter()
     # duration_speeaker_selector = finish_time_speeaker_selector - start_time_speeaker_selector
-    # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / sample_rate)
+    # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / args.sample_rate)
     # print("実時間比（Speaker Selector）：{:.3f}".format(rtf))
 
     # 目的話者の発話の複素スペクトログラムを取得
@@ -418,28 +430,28 @@ def main():
     sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = \
         audio_eval(args.sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_target_voice_path)
     
-    # 音声認識性能の評価
-    # ESPnetを用いる場合
-    target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
-    target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
-    mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
-    mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
-    estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
-    estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
-    # ファイル名を取得
-    file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
-    # 正解ラベルを読み込む
-    reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
-    with open(reference_label_path, 'r', encoding="utf8") as ref:
-        # ピリオドとコンマを消して大文字に変換した後、スペースで分割
-        reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
-    # WERを計算
-    clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
-    mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
-    est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
-    wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
-    wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
-    wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
+    # # 音声認識性能の評価
+    # # ESPnetを用いる場合
+    # target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
+    # target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
+    # mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
+    # mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
+    # estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
+    # estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
+    # # ファイル名を取得
+    # file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
+    # # 正解ラベルを読み込む
+    # reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
+    # with open(reference_label_path, 'r', encoding="utf8") as ref:
+    #     # ピリオドとコンマを消して大文字に変換した後、スペースで分割
+    #     reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
+    # # WERを計算
+    # clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
+    # mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
+    # est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
+    # wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
+    # wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
+    # wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
 
 
     # # Juliusを用いる場合（日本語シングルチャンネル音声のみに対応）
