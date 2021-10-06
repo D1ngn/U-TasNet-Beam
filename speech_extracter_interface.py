@@ -27,7 +27,7 @@ from beamformer import estimate_covariance_matrix_sig, condition_covariance, est
 from utils.utilities import AudioProcessForComplex
 # 話者識別用モデル
 from utils.embedder import SpeechEmbedder
-from loss_func import solve_inter_channel_permutation_problem # マルチチャンネル話者分離時に使用
+from utils.loss_func import solve_inter_channel_permutation_problem # マルチチャンネル話者分離時に使用
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -218,7 +218,7 @@ if __name__ == "__main__":
         print("Please specify the correct denoising model type")
     # 話者分離モデル
     if args.speaker_separation_model_type == 'conv_tasnet':
-        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch630.pt"
+        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch560.pt"
         speaker_separation_model = MCConvTasNet()
     else:
         print("Please specify the correct speaker separator type")

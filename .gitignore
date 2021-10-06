@@ -65,3 +65,5 @@ loss_test.py
 
 speech_extracter_interface_mask_base.py
 speech_extracter_interface_for_record.py
+
+spec_show.py

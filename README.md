@@ -13,7 +13,7 @@ PyTorch implementation of "Adaptation of robots to the real environment by simul
 
 ## Dependencies
 
-This code was tested on Python 3.6 with PyTorch 1.8 and torchvision 0.9.0.
+This code was tested on Python 3.7 with PyTorch 1.9.1, torchvision 0.10.1 and torchaudio 0.9.1.
 
 ```
 $ pip3 install -r requirements.txt

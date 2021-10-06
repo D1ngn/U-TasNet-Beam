@@ -24,10 +24,10 @@ from models import MCComplexUnet, MCConvTasNet # 雑音・残響除去モデル�
 from beamformer import estimate_covariance_matrix_sig, condition_covariance, estimate_steering_vector, mvdr_beamformer, mvdr_beamformer_two_speakers, gev_beamformer, ds_beamformer, mwf, localize_music # ビームフォーマ各種
 from utils.utilities import AudioProcessForComplex, spec_plot, wave_plot, count_parameters # 音声処理用
 from utils.embedder import SpeechEmbedder # 話者識別用
-from utils.evaluate import audio_eval, asr_eval # 評価用
-from loss_func import solve_inter_channel_permutation_problem # マルチチャンネル話者分離時に使用
+from utils.loss_func import solve_inter_channel_permutation_problem # マルチチャンネル話者分離時に使用
 from utils.asr import ASR # 音声認識用
 # from utils.asr import asr_julius # 音声認識用
+from evaluation.evaluate import audio_eval, asr_eval # 評価用
 
 
 def main():
@@ -73,6 +73,7 @@ def main():
     # 3秒版
     # target_voice_file = "./test/p232_016/p232_016_target.wav"
     # interference_audio_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
+    # noise_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
     # mixed_audio_file = "./test/p232_016/p232_016_mixed_azimuth45.wav"
     # target_voice_file = "./test/p232_021/p232_021_target.wav"
     # interference_audio_file = "./test/p232_021/p232_021_interference_azimuth15.wav"
@@ -175,7 +176,7 @@ def main():
         print("Please specify the correct denoising model type")
     # 話者分離モデル
     if args.speaker_separation_model_type == 'conv_tasnet':
-        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch630.pt"
+        checkpoint_path_for_speaker_separation_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_for_ConvTasnet_snr_loss_multisteplr00001start_20210928/ckpt_epoch560.pt"
         speaker_separation_model = MCConvTasNet()
     else:
         print("Please specify the correct speaker separator type")

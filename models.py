@@ -876,6 +876,7 @@ class MCComplexUnet(nn.Module):
         # self.out_layer_noise = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
         
     def forward(self, x, is_istft=False):
+        """x: (batch_size, num_channels, freq_bins, time_steps, real-imaginary)"""
         # downsampling/encoding
         d0 = self.downsample0(x)
         d1 = self.downsample1(d0)
@@ -1227,8 +1228,8 @@ def main():
     SAMPLE_RATE = 16000
     N_FFT = 512
     HOP_LENGTH = 160
-    cume = MCComplexUnet()
-    total_params = sum(p.numel() for p in cume.parameters())
+    mccunet = MCComplexUnet()
+    total_params = sum(p.numel() for p in mccunet.parameters())
     print("total params:",total_params)
     # start = time.perf_counter()
     # random input
@@ -1246,7 +1247,7 @@ def main():
     """x_noisy_stft: (num_channels, freq_bins, time_steps=513, real-imaginary)"""
     x_noisy_stft = torch.unsqueeze(x_noisy_stft, dim=0)
     """x_noisy_stft: (batch_size, num_channels, freq_bins, time_steps, real-imaginary)"""
-    speech_output, noise_output = cume(x_noisy_stft)
+    speech_output, noise_output = mccunet(x_noisy_stft)
     """speech_output: (batch_size, num_samples), noise_output: (batch_size, num_samples)"""
     # end = time.perf_counter()
     # print("処理時間：", end-start)

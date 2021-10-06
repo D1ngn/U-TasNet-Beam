@@ -17,7 +17,7 @@ import datetime
 
 from models import MCComplexUnet
 # from utils import AudioProcess
-from loss_func import snr_loss, si_snr_loss
+from utils.loss_func import snr_loss, si_snr_loss
 
 # PyTorch 以外のRNGを初期化
 # random.seed(0)
