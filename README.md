@@ -53,10 +53,18 @@ $ pip3 install -r requirements.txt
 
 
 
-## Training U-Net mask estimator
+## Training Multi-channel Complex U-Net
 
 ```
-$ python3 training.py
+$ python3 training_MCComplexUnet.py
+```
+
+
+
+## Training Multi-channel Conv-TasNet
+
+```
+$ python3 training_MCConvTasNet.py
 ```
 
 
