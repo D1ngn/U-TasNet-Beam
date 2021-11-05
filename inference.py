@@ -113,14 +113,14 @@ def main():
     # interference_audio_file = "./test/p232_021_rt0162/p232_021_interference_azimuth60.wav"
     # mixed_audio_file = "./test/p232_021_rt0162/p232_021_mixed_azimuth60.wav"
     # 英語話者2人（男性1人＋女性1人）版
-    target_voice_file = "./test/p232_414_p257_074_noise_mix/p232_414_target.wav"
-    interference_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_interference_azimuth15.wav"
-    noise_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_noise_azimuth180.wav"
-    mixed_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_mixed.wav"
-    # target_voice_file = "./test/p232_231_p257_129_noise_mix/p232_231_target.wav"
-    # interference_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_interference_azimuth15.wav"
-    # noise_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_mixed.wav" # こっちの方が結果がわかりやすい
+    # target_voice_file = "./test/p232_414_p257_074_noise_mix/p232_414_target.wav"
+    # interference_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_interference_azimuth15.wav"
+    # noise_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_noise_azimuth180.wav"
+    # mixed_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_mixed.wav"
+    target_voice_file = "./test/p232_231_p257_129_noise_mix/p232_231_target.wav"
+    interference_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_interference_azimuth15.wav"
+    noise_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_noise_azimuth180.wav"
+    mixed_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_mixed.wav" # こっちの方が結果がわかりやすい
     # 日本語話者2人版
     # # 男性1人＋女性1人
     # target_voice_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0001.wav"
@@ -228,8 +228,8 @@ def main():
     """ref_dvec: (embed_dim=256,)"""
     # PyTorchのテンソルからnumpy配列に変換
     ref_dvec = ref_dvec.cpu().detach().numpy().copy() # CPU
-    # # 音声認識用のインスタンスを生成
-    # asr_ins = ASR(lang='eng')
+    # 音声認識用のインスタンスを生成
+    asr_ins = ASR(lang='eng')
 
     # 処理の開始時間
     start_time = time.perf_counter()
@@ -431,28 +431,28 @@ def main():
     sdr_mix, sir_mix, sar_mix, sdr_est, sir_est, sar_est = \
         audio_eval(args.sample_rate, target_voice_path, interference_audio_path, mixed_audio_path, estimated_target_voice_path)
     
-    # # 音声認識性能の評価
-    # # ESPnetを用いる場合
-    # target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
-    # target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
-    # mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
-    # mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
-    # estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
-    # estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
-    # # ファイル名を取得
-    # file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
-    # # 正解ラベルを読み込む
-    # reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
-    # with open(reference_label_path, 'r', encoding="utf8") as ref:
-    #     # ピリオドとコンマを消して大文字に変換した後、スペースで分割
-    #     reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
-    # # WERを計算
-    # clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
-    # mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
-    # est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
-    # wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
-    # wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
-    # wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
+    # 音声認識性能の評価
+    # ESPnetを用いる場合
+    target_voice_recog_text = asr_ins.speech_recognition(target_voice_path) # （例） IT IS MARVELLOUS
+    target_voice_recog_text = target_voice_recog_text.replace('.', '').upper().split() # （例） ['IT', 'IS', 'MARVELLOUS']
+    mixed_audio_recog_text = asr_ins.speech_recognition(mixed_audio_path)
+    mixed_audio_recog_text = mixed_audio_recog_text.replace('.', '').upper().split()
+    estimated_voice_recog_text = asr_ins.speech_recognition(estimated_target_voice_path)
+    estimated_voice_recog_text = estimated_voice_recog_text.replace('.', '').upper().split()
+    # ファイル名を取得
+    file_num = os.path.basename(target_voice_file).split('.')[0].rsplit('_', maxsplit=1)[0] # （例） p232_016
+    # 正解ラベルを読み込む
+    reference_label_path = os.path.join(reference_label_dir, file_num + '.txt')
+    with open(reference_label_path, 'r', encoding="utf8") as ref:
+        # ピリオドとコンマを消して大文字に変換した後、スペースで分割
+        reference_label_text = ref.read().replace('.', '').replace(',', '').upper().split()
+    # WERを計算
+    clean_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_clean.txt')
+    mix_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_mix.txt')
+    est_recog_result_save_path = os.path.join(recog_result_dir, file_num + '_est.txt')
+    wer_clean = asr_eval(reference_label_text, target_voice_recog_text, clean_recog_result_save_path)
+    wer_mix = asr_eval(reference_label_text, mixed_audio_recog_text, mix_recog_result_save_path)
+    wer_est = asr_eval(reference_label_text, estimated_voice_recog_text, est_recog_result_save_path)
 
 
     # # Juliusを用いる場合（日本語シングルチャンネル音声のみに対応）

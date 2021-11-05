@@ -893,13 +893,13 @@ class MCComplexUnet(nn.Module):
         c4 = torch.cat((u4, d0), dim=1)
         
 #         # output (speech only)
-#         speech_mask = self.out_layer_speech(c4)
+#         speech_mask = self.out_layer_speech(c4) # estimate complex ideal ratio mask (cIRM)
 #         speech_output = speech_mask * x
 #         return speech_output
         
         # output (speech and noise)
-        speech_mask = self.out_layer_speech(c4)
-        noise_mask = self.out_layer_noise(c4)
+        speech_mask = self.out_layer_speech(c4) # estimate complex ideal ratio mask (cIRM)
+        noise_mask = self.out_layer_noise(c4) # estimate complex ideal ratio mask (cIRM)
         speech_output = speech_mask * x
         noise_output = noise_mask * x
         return speech_output, noise_output
@@ -1231,44 +1231,44 @@ def main():
     mccunet = MCComplexUnet()
     total_params = sum(p.numel() for p in mccunet.parameters())
     print("total params:",total_params)
-    # start = time.perf_counter()
-    # random input
-    # random_input = torch.randn(1, 8, 257, 513, 2)
-    # print("input_shape:", random_input.shape)
-    # file input
-    file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_mixed.wav" # 8ch
-    # file = "./test/p232_414_p257_074_mix_single_channel/16kHz/p232_414_p257_074_noise_mixed_single_channel.wav" # 1ch
-    waveform, _ = torchaudio.load(file)
-    """waveform: (num_channels, num_samples)"""
-    x_noisy_stft = torch.stft(input=waveform, n_fft=512, hop_length=160, normalized=True, return_complex=False)
-    # x_noisy_stft = torch.stft(input=waveform, n_fft=512, hop_length=160, normalized=False, return_complex=False)
-    """x_noisy_stft: (num_channels, freq_bins, time_steps, real-imaginary)"""
-    x_noisy_stft = nn.ZeroPad2d((0, 0, 0, 513-x_noisy_stft.shape[2]))(x_noisy_stft) # padding
-    """x_noisy_stft: (num_channels, freq_bins, time_steps=513, real-imaginary)"""
-    x_noisy_stft = torch.unsqueeze(x_noisy_stft, dim=0)
-    """x_noisy_stft: (batch_size, num_channels, freq_bins, time_steps, real-imaginary)"""
-    speech_output, noise_output = mccunet(x_noisy_stft)
-    """speech_output: (batch_size, num_samples), noise_output: (batch_size, num_samples)"""
-    # end = time.perf_counter()
-    # print("処理時間：", end-start)
-    print("speech_output:", speech_output.shape)
-    print("noise_output:", speech_output.shape)
+    # # start = time.perf_counter()
+    # # random input
+    # # random_input = torch.randn(1, 8, 257, 513, 2)
+    # # print("input_shape:", random_input.shape)
+    # # file input
+    # file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_mixed.wav" # 8ch
+    # # file = "./test/p232_414_p257_074_mix_single_channel/16kHz/p232_414_p257_074_noise_mixed_single_channel.wav" # 1ch
+    # waveform, _ = torchaudio.load(file)
+    # """waveform: (num_channels, num_samples)"""
+    # x_noisy_stft = torch.stft(input=waveform, n_fft=512, hop_length=160, normalized=True, return_complex=False)
+    # # x_noisy_stft = torch.stft(input=waveform, n_fft=512, hop_length=160, normalized=False, return_complex=False)
+    # """x_noisy_stft: (num_channels, freq_bins, time_steps, real-imaginary)"""
+    # x_noisy_stft = nn.ZeroPad2d((0, 0, 0, 513-x_noisy_stft.shape[2]))(x_noisy_stft) # padding
+    # """x_noisy_stft: (num_channels, freq_bins, time_steps=513, real-imaginary)"""
+    # x_noisy_stft = torch.unsqueeze(x_noisy_stft, dim=0)
+    # """x_noisy_stft: (batch_size, num_channels, freq_bins, time_steps, real-imaginary)"""
+    # speech_output, noise_output = mccunet(x_noisy_stft)
+    # """speech_output: (batch_size, num_samples), noise_output: (batch_size, num_samples)"""
+    # # end = time.perf_counter()
+    # # print("処理時間：", end-start)
+    # print("speech_output:", speech_output.shape)
+    # print("noise_output:", speech_output.shape)
 
-    # Multi-channel Conv-TasNet
-    SAMPLE_RATE = 16000
-    N_FFT = 512
-    HOP_LENGTH = 160
-    mc_conv_tasnet = MCConvTasNet()
-    total_params = sum(p.numel() for p in mc_conv_tasnet.parameters())
-    print("total params:",total_params)
-    # start = time.perf_counter()
-    random_input = torch.randn(1, 8, 48000)
-    """random_input: (batch_size, num_channels, num_samples)"""
-    output = mc_conv_tasnet(random_input)
-    """output: (batch_size, num_speakers, num_channels, num_samples)"""
-    # end = time.perf_counter()
-    # print("処理時間：", end-start)
-    print("output:", output.shape)
+    # # Multi-channel Conv-TasNet
+    # SAMPLE_RATE = 16000
+    # N_FFT = 512
+    # HOP_LENGTH = 160
+    # mc_conv_tasnet = MCConvTasNet()
+    # total_params = sum(p.numel() for p in mc_conv_tasnet.parameters())
+    # print("total params:",total_params)
+    # # start = time.perf_counter()
+    # random_input = torch.randn(1, 8, 48000)
+    # """random_input: (batch_size, num_channels, num_samples)"""
+    # output = mc_conv_tasnet(random_input)
+    # """output: (batch_size, num_speakers, num_channels, num_samples)"""
+    # # end = time.perf_counter()
+    # # print("処理時間：", end-start)
+    # print("output:", output.shape)
 
 
     # summary(model, (1, 257, 513))

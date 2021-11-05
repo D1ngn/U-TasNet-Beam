@@ -27,9 +27,9 @@ def si_snr_loss(clean, estimated, eps=1e-8):
     estimated_clean_inner_product = calc_inner_product(estimated, clean)
     clean_clean_inner_product = calc_inner_product(clean, clean)
     s_target = (estimated_clean_inner_product / (clean_clean_inner_product + eps)) * clean # epsは0除算を避けるため
-    e_nosie = estimated - s_target
+    e_noise = estimated - s_target
     target_inner_product = calc_inner_product(s_target, s_target)
-    noise_inner_product = calc_inner_product(e_nosie, e_nosie)
+    noise_inner_product = calc_inner_product(e_noise, e_noise)
     snr = 10 * torch.log10((target_inner_product) / (noise_inner_product + eps) + eps) # epsはー∞、+∞に発散するのを防ぐため
     """snr: (num_channles, value)"""
     # チャンネル間の平均をとって返す（SI-SNRを最大化したいため、-SI-SNRを最小化するようにマイナスをつける）
@@ -180,6 +180,105 @@ def pit_loss(target_speech, estimated_speech):
         loss = snr_loss_1
     else:
         loss = snr_loss_2
+    return loss
+
+#############################提案手法用###############################
+# 信号の複素スペクトログラムのみから共分散行列（空間相関行列）を推定（バッチ次元追加版）
+def estimate_covariance_matrix_sig_batch_torch(complex_spec):
+    """
+    complex_spec: 入力複素スペクトログラム (batch_size, num_channles, freq_bins, time_frames)
+    """
+    # 空間相関行列を算出    
+    spatial_covariance_matrix = torch.einsum("bmft,bnft->bfmn", complex_spec, torch.conj(complex_spec))
+    """spatial_covariance_matrix: (batch_size, freq_bins, num_microphones, num_microphones)"""
+    # 固有値分解をして半正定値行列に変換（eighはPyTorchのバージョン1.9以降で実装）
+    eigenvalues, eigenvectors = torch.linalg.eigh(spatial_covariance_matrix) #   numpy.linalg.eighとtorch.linalg.eighの挙動の違いを確認する必要がある TODO
+    """eigenvalues: (batch_size, freq_bins, num_microphones), eigenvectors: (batch_size, freq_bins, num_microphones, num_microphones)"""
+#     # 固有値が0より小さい場合は微小な数に置き換える
+#     mask = eigenvalues.ge(0) # 0以上の部分をTrue、0より小さい部分をFlaseとしたマスクを生成
+#     eigenvalues = eigenvalues * mask
+#     eigenvalues = eigenvalues.masked_fill(mask==False, 1e-18)
+#     eigenvalues[eigenvalues < 1e-18] = 1e-18 # 固有値が0より小さい場合は0に置き換える # in-place operationはbackward時にエラーが出る（これは使えない）
+    spatial_covariance_matrix = torch.einsum("bfmi,bfi,bfni->bfmn", eigenvectors, eigenvalues, torch.conj(eigenvectors))
+    """spatial_covariance_matrix: (batch_size, freq_bins, num_microphones, num_microphones)"""
+    return spatial_covariance_matrix
+
+# 行列の対角成分の和を算出する関数（torch.trace()では3次元以上のテンソルを入力できないため）
+def trace(input, axis1=0, axis2=1):
+    # 参考：「https://github.com/pytorch/pytorch/issues/52668」
+    """
+    >>> torch.__version__
+    '1.9.0.dev20210222+cpu'
+    >>> x = torch.arange(1., 10.).view(3, 3)
+    >>> x
+    tensor([[1., 2., 3.],
+            [4., 5., 6.],
+            [7., 8., 9.]])
+    >>> torch.trace(x)
+    tensor(15.)
+    >>> torch.trace(x.view(1, 3, 3))
+    Traceback (most recent call last):
+    ...
+    RuntimeError: trace: expected a matrix, but got tensor with dim 3
+    >>> trace(x)
+    tensor(15.)
+    >>> trace(x.view(3, 3, 1), axis1=0, axis2=1)
+    tensor([15.])
+    >>> trace(x.view(1, 3, 3), axis1=2, axis2=1)
+    tensor([15.])
+    >>> trace(x.view(3, 1, 3), axis1=0, axis2=2)
+    tensor([15.])
+    """
+#     assert input.shape[axis1] == input.shape[axis2], input.shape
+
+    shape = list(input.shape)
+    strides = list(input.stride())
+    strides[axis1] += strides[axis2]
+
+    shape[axis2] = 1
+    strides[axis2] = 0
+
+    input = torch.as_strided(input, size=shape, stride=strides)
+    return input.sum(dim=(axis1, axis2))
+
+# スパースかつ良条件（条件数が少ない問題）の共分散行列を推定
+def condition_covariance(x, device, eps=1e-6):
+    """see https://stt.msu.edu/users/mauryaas/Ashwini_JPEN.pdf (2.3)"""
+    """x: (batch_size, freq_bins, num_microphones, num_microphones)"""
+    scale = eps * trace(x) /  x.shape[-1]
+    scaled_eye = torch.eye(x.shape[-1]).to(device) * scale
+    return (x + scaled_eye) / (1 + eps)
+    
+def scm_loss(clean, estimated, device, flag, num_channels=8):
+    """
+    clean: (batch_size*num_channels, num_samples)
+    estimated: (batch_size*num_channels, num_samples)
+    device: 'cpu' or 'cuda:{}'
+    flag: 'speech' or 'noise'
+    num_channels: Number of microphone channels (default: 8)
+    """
+    # 音声波形を複素スペクトログラムに変換
+    clean_complex_spec = torch.stft(input=clean, n_fft=512, hop_length=160, normalized=False, return_complex=True)
+    """clean_complex_spec: (batch_size*num_channels, freq_bins, time_frames)"""
+    estimated_complex_spec = torch.stft(input=estimated, n_fft=512, hop_length=160, normalized=False, return_complex=True)
+    """estimated_complex_spec: (batch_size*num_channels, freq_bins, time_frames)"""
+    # バッチサイズの次元とチャンネル数の次元を元に戻す
+    clean_complex_spec = clean_complex_spec.contiguous().view(-1, num_channels, clean_complex_spec.shape[1], clean_complex_spec.shape[2])
+    """clean_complex_spec: (batch_size, num_channels, freq_bins, time_frames)"""
+    estimated_complex_spec = estimated_complex_spec.contiguous().view(-1, num_channels, estimated_complex_spec.shape[1], estimated_complex_spec.shape[2])
+    """estimated_complex_spec: (batch_size, num_channels, freq_bins, time_frames)""" 
+    # 空間相関行列を算出
+    clean_spatial_covariance_matrix = estimate_covariance_matrix_sig_batch_torch(clean_complex_spec)
+    """clean_spatial_covariance_matrix: (batch_size, freq_bins, num_microphones, num_microphones)"""
+    estimated_spatial_covariance_matrix = estimate_covariance_matrix_sig_batch_torch(estimated_complex_spec)
+    """estimated_spatial_covariance_matrix: (batch_size, freq_bins, num_microphones, num_microphones)"""
+    # ロスを算出
+    # 雑音の空間相関行列を算出する場合以下の処理がないと性能が大きく落ちる
+    if flag == 'noise':
+        clean_spatial_covariance_matrix = condition_covariance(clean_spatial_covariance_matrix, device, 1e-6)
+        estimated_spatial_covariance_matrix = condition_covariance(estimated_spatial_covariance_matrix, device, 1e-6)
+    # MAE loss
+    loss = torch.mean(torch.abs(estimated_spatial_covariance_matrix - clean_spatial_covariance_matrix)) / num_channels 
     return loss
 
 if __name__ == "__main__":

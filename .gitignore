@@ -40,8 +40,10 @@ RealTimeDemo_azure_kinect.py
 training_acoustic_spatial.py
 training_backup.py
 training_mask_base.py
+training_ComplexUnet_SCM_loss.ipynb
 
 evaluate_mask_beamformer_azimuth_wise.ipynb
+evaluate_MCConvTasNet.ipynb
 
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data.ipynb
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR.ipynb
