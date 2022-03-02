@@ -59,9 +59,9 @@ def speech_extracter(mixed_audio_data):
         """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
         noise_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
         # ミニバッチに分けられた振幅＋位相スペクトログラムを時間方向に結合
-        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.chunk_size, args.target_aware_channel)
+        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.chunk_size)
         """multichannel_speech_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
-        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.chunk_size, args.noise_aware_channel)
+        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.chunk_size)
         """multichannel_noise_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
         # torch.stftを使用する場合
         # 発話のマルチチャンネルスペクトログラムを音声波形に変換
@@ -168,8 +168,6 @@ if __name__ == "__main__":
     parser.add_argument('-dt', '--dereverb_type', type=str, default='None', help='type of dereverb algorithm (None or WPE)')
     parser.add_argument('-ep', '--embedder_path', type=str, default="./utils/embedder.pt", help='path of pretrained embedder model')
     parser.add_argument('-rsp', '--ref_speech_path', type=str, default="./utils/ref_speech/sample.wav", help='path of reference speech')
-    parser.add_argument('-tac', '--target_aware_channel', type=int, default=0, help='microphone channel near target source')
-    parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source')
     args = parser.parse_args()
 
     #########################音源定位用設定########################
@@ -211,7 +209,6 @@ if __name__ == "__main__":
     # 雑音（残響）除去モデル
     if args.denoising_model_type == 'complex_unet':
         denoising_model = MCComplexUnet()
-        channel_select_type = 'single'
         padding = True
         checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_snr_loss_multisteplr00001start_20210922/ckpt_epoch490.pt" # Complex U-Net speech and noise output ch constant snr loss (signal base newest model)
     else:
@@ -225,7 +222,7 @@ if __name__ == "__main__":
 
     # 音声処理クラスのインスタンスを作成
     # audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, padding)
 
     # 学習済みのパラメータをロード
     denoising_model_params = torch.load(checkpoint_path, map_location=device)

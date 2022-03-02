@@ -1,4 +1,4 @@
-# MaskBeamformer
+# U-TasNet-Beam
 
 ## Abstruct
 
@@ -43,7 +43,7 @@ $ pip3 install -r requirements.txt
    $ tar *.zip 
    ```
 
-   Second, open jupyter notebook and run `make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data_test_original_length_reverb.ipynb` to make training dataset for U-Net mask estimator
+   Second, open jupyter notebook and run `make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data_test_original_length_reverb.ipynb` to make training dataset for U-TasNet-Beam
 
    ```
    $ jupyter notebook
@@ -86,15 +86,7 @@ $ python3 training_MCConvTasNet.py
 
    **Update**: Evaluation on VoxCeleb1 selected pair showed 7.4% EER.
 
-2. Download pretrained model for speaker separation system
-
-   This method utilizes speaker separation system ([Conv-TasNet](https://arxiv.org/pdf/1809.07454.pdf)).
-
-   Get pretrained model for speaker separation system at [this huggingface link](https://huggingface.co/models?filter=asteroid).
-
-   Please download `JorisCos/ConvTasNet_Libri2Mix_sepnoisy_16k`.
-
-3. Run
+2. Run
 
    ```
    $ python3 inference.py
@@ -104,8 +96,12 @@ $ python3 training_MCConvTasNet.py
 
    - `-sr` : sampling rate (Default 16000)
    - `-bl` : batch size of mask estimator and beamformer input (Default 48000)
-
-   -  
+   - `-c` : number of audio channels (Default 8)
+   - `-dmt` : denoising and dereverberation model type
+   - `-ssmt` : speaker separation model type
+   - `-bt` : beamformer type
+   
+   If you evaluate the performance by using multiple audio data at once, use `evaluate_neural_beamformer.ipynb`.
 
 
 
@@ -133,7 +129,7 @@ $ python3 training_MCConvTasNet.py
    
      **Option**
    
-     - `-dm` : Whether model denoises audio or not
+     - `-em` : Whether model extracts audio or not
    
      - `-d` : Input device (numeric ID or substring) (you can check ID by running following commands)
         ```
@@ -180,6 +176,7 @@ $ python3 training_MCConvTasNet.py
 ## Author
 
 Daichi Nagano at nakazawa lab
+E-mail: naganod1@gmail.com
 
 
 

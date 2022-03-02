@@ -16,7 +16,6 @@ import glob
 import datetime
 
 from models import MCComplexUnet
-# from utils import AudioProcess
 from utils.loss_func import snr_loss, si_snr_loss
 
 # PyTorch 以外のRNGを初期化
@@ -24,7 +23,6 @@ from utils.loss_func import snr_loss, si_snr_loss
 np.random.seed(0)
 # PyTorch のRNGを初期化
 torch.manual_seed(0)
-# os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 # データセットのクラス
 class SpeechDataset(data.Dataset):
@@ -314,7 +312,6 @@ if __name__ == '__main__':
     # ネットワークモデルの定義、チャンネルの選び方の指定、モデル入力時にパディングを行うか否かを指定
     if model_type == 'Complex_Unet':
         model = MCComplexUnet()
-        channel_select_type = 'median'
         padding = False
     
     # データセットを作成
@@ -323,8 +320,6 @@ if __name__ == '__main__':
     # dataset_dir = "../AudioDatasets/NoisySpeechDatabase/"
     train_mixed_wav_list, train_target_wav_list, train_noise_wav_list, \
         val_mixed_wav_list, val_target_wav_list, val_noise_wav_list = mk_datapath_list(dataset_dir)
-    # # 前処理クラスのインスタンスを作成(numpy形式のスペクトログラムをpytorchのテンソルに変換する)
-    # audio_processor = AudioProcess(sample_rate, fft_size, hop_length, channel_select_type, padding)
     # データセットのインスタンスを作成
     train_dataset = SpeechDataset(train_mixed_wav_list, train_target_wav_list, train_noise_wav_list, \
         sample_rate, fft_size, hop_length)

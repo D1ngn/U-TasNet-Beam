@@ -94,9 +94,9 @@ def worker(mixed_audio_data):
         """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
         noise_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
         # ミニバッチに分けられた振幅＋位相スペクトログラムを時間方向に結合
-        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.chunk_size, args.target_aware_channel)
+        multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.chunk_size)
         """multichannel_speech_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
-        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.chunk_size, args.noise_aware_channel)
+        multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.chunk_size)
         """multichannel_noise_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
         # 発話のマルチチャンネルスペクトログラムを音声波形に変換
         multichannel_denoised_data = torch.istft(multichannel_speech_amp_phase_spec, n_fft=512, hop_length=160, \
@@ -168,10 +168,7 @@ def worker(mixed_audio_data):
         print("音源定位結果：", str(speaker_azimuth) + "deg") 
         # マルチチャンネルスペクトログラムを音声波形に変換
         multichannel_estimated_target_voice_data = audio_processor.spec_to_wave(estimated_target_spec, mixed_audio_data)
-        # multichannel_estimated_interference_voice_data = audio_processor.spec_to_wave(estimated_interference_spec, mixed_audio_data)
         """multichannel_estimated_target_voice_data: (num_samples, num_channels)"""
-        # finish_time = tm.perf_counter()
-        # print("処理時間：", finish_time - start_time)
         # キューにデータを格納
         q.put(multichannel_estimated_target_voice_data)
     # 雑音除去を行わない場合
@@ -193,7 +190,7 @@ if __name__ == "__main__":
 
     # コマンドライン引数を受け取る
     parser = argparse.ArgumentParser(description='Real time voice separation')
-    parser.add_argument('-dm', '--denoising_mode', action='store_true', help='whether model denoises audio or not')
+    parser.add_argument('-em', '--extracting_mode', action='store_true', help='whether model extracts audio or not')
     parser.add_argument('-d', '--device', type=int_or_str, default=0, help='input device (numeric ID or substring)')
     parser.add_argument('-mg', '--mic_gain', type=int, default=1, help='Microphone gain')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate')
@@ -207,8 +204,6 @@ if __name__ == "__main__":
     parser.add_argument('-dt', '--dereverb_type', type=str, default='None', help='type of dereverb algorithm (None or WPE)')
     parser.add_argument('-ep', '--embedder_path', type=str, default="./utils/embedder.pt", help='path of pretrained embedder model')
     parser.add_argument('-rsp', '--ref_speech_path', type=str, default="./utils/ref_speech/sample.wav", help='path of reference speech')
-    parser.add_argument('-tac', '--target_aware_channel', type=int, default=0, help='microphone channel near target source')
-    parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source')
     args = parser.parse_args()
 
     ########################################################音源定位用設定############################################################
@@ -248,7 +243,6 @@ if __name__ == "__main__":
     if args.denoising_model_type == 'complex_unet':
         checkpoint_path_for_denoising_model = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_snr_loss_multisteplr00001start_20210922/ckpt_epoch490.pt" # Complex U-Net speech and noise output ch constant snr loss (signal base newest model)
         denoising_model = MCComplexUnet()
-        channel_select_type = 'single'
         padding = True
     else:
         print("Please specify the correct denoising model type")
@@ -261,7 +255,7 @@ if __name__ == "__main__":
 
     # 音声処理クラスのインスタンスを作成
     # audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, padding)
     
     # 学習済みのパラメータをロード
     denoising_model_params = torch.load(checkpoint_path_for_denoising_model, map_location=device)

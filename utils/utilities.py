@@ -333,11 +333,10 @@ class AudioProcess():
 
 # データの前処理を行うクラス
 class AudioProcessForComplex():
-    def __init__(self, sample_rate, fft_size, hop_length, channel_select_type='single', padding=True, num_mels=40):
+    def __init__(self, sample_rate, fft_size, hop_length, padding=True, num_mels=40):
         self.sample_rate = sample_rate
         self.fft_size = fft_size
         self.hop_length = hop_length
-#         self.channel_select_type = channel_select_type # 'single' or 'median' or 'aware'
         self.padding = padding # True or False
         # ログメルスペクトログラムを使用する場合
         self.num_mels = num_mels
@@ -690,11 +689,10 @@ class AudioProcessForComplex():
         return amp_phase_spec_batch
     
     # ミニバッチに分けられたマスクを時間方向に結合し、混合音にかけて各音源のスペクトログラムを取得
-    def postprocess_mask_estimator(self, mixed_complex_spec, amp_phase_spec, batch_length, aware_channel=0):
+    def postprocess_mask_estimator(self, mixed_complex_spec, amp_phase_spec, batch_length):
         """
         mixed_complex_spec: 混合音のスペクトログラム (num_channels, freq_bins, time_frames)
         amp_phase_spec: 振幅＋位相スペクトログラム (batch_size, num_channels, freq_bins, time_frames, real_imaginary)
-        aware_channel: チャンネルの選択方式がawareの場合に選択するチャンネル（medianでは使わない） TODO
         """            
         # paddingされた分を削除する
         if self.padding:

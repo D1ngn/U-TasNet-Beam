@@ -44,10 +44,7 @@ def main():
     parser.add_argument('-dt', '--dereverb_type', type=str, default='None', help='type of dereverb algorithm (None or WPE)') # 残響除去手法のタイプ
     parser.add_argument('-ep', '--embedder_path', type=str, default="./utils/embedder.pt", help='path of pretrained embedder model') # 話者識別用の学習済みモデルのパス
     parser.add_argument('-rsp', '--ref_speech_path', type=str, default="./utils/ref_speech/sample.wav", help='path of reference speech') # 声を抽出したい人の発話サンプルのパス
-    parser.add_argument('-tac', '--target_aware_channel', type=int, default=0, help='microphone channel near target source') # 目的音に関するマスクのチャンネル
-    parser.add_argument('-nac', '--noise_aware_channel', type=int, default=4, help='microphone channel near noise source') # 雑音に関するマスクのチャンネル
     args = parser.parse_args()
-
 
     #########################音源定位用設定########################
     freq_range = [200, 3000] # 空間スペクトルの算出に用いる周波数帯[Hz]
@@ -68,152 +65,13 @@ def main():
     mic_alignments = mic_alignments.T # get the microphone arra
     """mic_alignments: (3D coordinates [m], num_microphones)"""
     ############################################################# 
-    
-    # 英語（男性）
-    # 3秒版
-    # target_voice_file = "./test/p232_016/p232_016_target.wav"
-    # interference_audio_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
-    # noise_file = "./test/p232_016/p232_016_interference_azimuth45.wav"
-    # mixed_audio_file = "./test/p232_016/p232_016_mixed_azimuth45.wav"
-    # target_voice_file = "./test/p232_021/p232_021_target.wav"
-    # interference_audio_file = "./test/p232_021/p232_021_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p232_021/p232_021_mixed_azimuth15.wav"
-    # オリジナルの長さ版
-    # target_voice_file = "./test/p232_123/p232_123_target.wav" 
-    # interference_audio_file = "./test/p232_123/p232_123_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p232_123/p232_123_mixed_azimuth15.wav" # 違いがわからない
-
-    # 英語（女性）
-    # 3秒版
-    # target_voice_file = "./test/p257_006/p257_006_target.wav"
-    # interference_audio_file = "./test/p257_006/p257_006_interference_azimuth60.wav"
-    # mixed_audio_file = "./test/p257_006/p257_006_mixed_azimuth60.wav"
-    # target_voice_file = "./test/p257_130/p257_130_target.wav"
-    # interference_audio_file = "./test/p257_130/p257_130_interference_azimuth0.wav"
-    # mixed_audio_file = "./test/p257_130/p257_130_mixed_azimuth0.wav"
-    # オリジナルの長さ版
-    # target_voice_file = "./test/p257_011/p257_011_target.wav"
-    # interference_audio_file = "./test/p257_011/p257_011_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p257_011/p257_011_mixed_azimuth15.wav" # 結構いい結果が出る
-    # target_voice_file = "./test/p257_050/p257_050_target.wav"
-    # interference_audio_file = "./test/p257_050/p257_050_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p257_050/p257_050_mixed_azimuth15.wav"
-    # target_voice_file = "./test/p257_430/p257_430_target.wav"
-    # interference_audio_file = "./test/p257_430/p257_430_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p257_430/p257_430_mixed_azimuth15.wav" # めちゃくちゃわかりやすい結果が出る
-    # オリジナルの長さ版（残響あり）
-    # target_voice_file = "./test/p257_430_rt0161/p257_430_target.wav"
-    # interference_audio_file = "./test/p257_430_rt0161/p257_430_interference_azimuth15.wav"
-    # mixed_audio_file = "./test/p257_430_rt0161/p257_430_mixed_azimuth15.wav" # なぜか残響なし版と比べて混合音声のWERが改善？
-
-    # 日本語（女性）
-    # target_voice_file = "./test/JVS/BASIC5000_0145_target.wav"
-    # interference_audio_file = "./test/JVS/BASIC5000_0145_interference.wav"
-    # mixed_audio_file = "./test/JVS/BASIC5000_0145_mixed.wav"
-
-    # 英語（男性・残響あり）
-    # target_voice_file = "./test/p232_021_rt0162/p232_021_target.wav"
-    # interference_audio_file = "./test/p232_021_rt0162/p232_021_interference_azimuth60.wav"
-    # mixed_audio_file = "./test/p232_021_rt0162/p232_021_mixed_azimuth60.wav"
-
-    # 英語話者2人（男性1人＋女性1人）版
-    # target_voice_file = "./test/p232_414_p257_074_noise_mix/p232_414_target.wav"
-    # interference_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_interference_azimuth15.wav"
-    # noise_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_414_p257_074_noise_mix/p232_414_p257_074_mixed.wav"
-    # target_voice_file = "./test/p232_231_p257_129_noise_mix/p232_231_target.wav"
-    # interference_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_interference_azimuth15.wav"
-    # noise_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_231_p257_129_noise_mix/p232_231_p257_129_mixed.wav" # こっちの方が結果がわかりやすい
-    # target_voice_file = "./test/p232_175_p257_290_noise_mix/p232_175_target.wav"
-    # interference_audio_file = "./test/p232_175_p257_290_noise_mix/p232_175_p257_290_interference_azimuth45.wav"
-    # noise_file = "./test/p232_175_p257_290_noise_mix/p232_175_p257_290_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_175_p257_290_noise_mix/p232_175_p257_290_mixed.wav"
-    # 残響時間なし
-    # target_voice_file = "./test/p232_374_p257_331_noise_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_mix/p232_374_p257_331_mixed.wav"
-
-    # # 英語話者2人（男性1人＋女性1人）・残響あり版
-    # target_voice_file = "./test/p232_175_p257_290_noise_reverb03_mix/p232_175_target.wav"
-    # interference_audio_file = "./test/p232_175_p257_290_noise_reverb03_mix/p232_175_p257_290_interference_azimuth45.wav"
-    # noise_file = "./test/p232_175_p257_290_noise_reverb03_mix/p232_175_p257_290_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_175_p257_290_noise_reverb03_mix/p232_175_p257_290_mixed.wav" # SCM lossを使わないと精度が大幅に低下
-
-    # p232_153_p257_120：残響時間0.3秒になるまでWERが0（ただし、SCM lossよりもSNR lossの方が優れている）
-    # 残響時間0秒
+ 
+    # 入力データ
     target_voice_file = "./test/p232_153_p257_120_noise_mix/p232_153_target.wav"
     interference_audio_file = "./test/p232_153_p257_120_noise_mix/p232_153_p257_120_interference_azimuth45.wav"
     noise_file = "./test/p232_153_p257_120_noise_mix/p232_153_p257_120_noise_azimuth180.wav"
     mixed_audio_file = "./test/p232_153_p257_120_noise_mix/p232_153_p257_120_mixed.wav"
-    # # 残響時間0.1秒
-    # target_voice_file = "./test/p232_153_p257_120_noise_reverb01_mix/p232_153_target.wav"
-    # interference_audio_file = "./test/p232_153_p257_120_noise_reverb01_mix/p232_153_p257_120_interference_azimuth45.wav"
-    # noise_file = "./test/p232_153_p257_120_noise_reverb01_mix/p232_153_p257_120_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_153_p257_120_noise_reverb01_mix/p232_153_p257_120_mixed.wav"
-    # # 残響時間0.2秒
-    # target_voice_file = "./test/p232_153_p257_120_noise_reverb02_mix/p232_153_target.wav"
-    # interference_audio_file = "./test/p232_153_p257_120_noise_reverb02_mix/p232_153_p257_120_interference_azimuth45.wav"
-    # noise_file = "./test/p232_153_p257_120_noise_reverb02_mix/p232_153_p257_120_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_153_p257_120_noise_reverb02_mix/p232_153_p257_120_mixed.wav"# 残響時間0.3秒
-    # # 残響時間0.3秒
-    # target_voice_file = "./test/p232_153_p257_120_noise_reverb03_mix/p232_153_target.wav"
-    # interference_audio_file = "./test/p232_153_p257_120_noise_reverb03_mix/p232_153_p257_120_interference_azimuth45.wav"
-    # noise_file = "./test/p232_153_p257_120_noise_reverb03_mix/p232_153_p257_120_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_153_p257_120_noise_reverb03_mix/p232_153_p257_120_mixed.wav"
-    # # 残響時間0.4秒
-    # target_voice_file = "./test/p232_153_p257_120_noise_reverb04_mix/p232_153_target.wav"
-    # interference_audio_file = "./test/p232_153_p257_120_noise_reverb04_mix/p232_153_p257_120_interference_azimuth45.wav"
-    # noise_file = "./test/p232_153_p257_120_noise_reverb04_mix/p232_153_p257_120_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_153_p257_120_noise_reverb04_mix/p232_153_p257_120_mixed.wav"
-    # # 残響時間0.5秒
-    # target_voice_file = "./test/p232_153_p257_120_noise_reverb05_mix/p232_153_target.wav"
-    # interference_audio_file = "./test/p232_153_p257_120_noise_reverb05_mix/p232_153_p257_120_interference_azimuth45.wav"
-    # noise_file = "./test/p232_153_p257_120_noise_reverb05_mix/p232_153_p257_120_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_153_p257_120_noise_reverb05_mix/p232_153_p257_120_mixed.wav"
-
-
-
-
-    # p232_374_p257_331：残響時間が0.3秒の時に結構いい方向推定結果が出る（SCM lossの有効性を確認できる）
-    # 残響時間0.1秒
-    # target_voice_file = "./test/p232_374_p257_331_noise_reverb01_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_reverb01_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_reverb01_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_reverb01_mix/p232_374_p257_331_mixed.wav"
-    # 残響時間0.2秒
-    # target_voice_file = "./test/p232_374_p257_331_noise_reverb02_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_reverb02_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_reverb02_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_reverb02_mix/p232_374_p257_331_mixed.wav"
-    # 残響時間0.3秒
-    # target_voice_file = "./test/p232_374_p257_331_noise_reverb03_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_reverb03_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_reverb03_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_reverb03_mix/p232_374_p257_331_mixed.wav"
-    # 残響時間0.4秒
-    # target_voice_file = "./test/p232_374_p257_331_noise_reverb04_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_reverb04_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_reverb04_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_reverb04_mix/p232_374_p257_331_mixed.wav"
-    # 残響時間0.5秒
-    # target_voice_file = "./test/p232_374_p257_331_noise_reverb05_mix/p232_374_target.wav"
-    # interference_audio_file = "./test/p232_374_p257_331_noise_reverb05_mix/p232_374_p257_331_interference_azimuth45.wav"
-    # noise_file = "./test/p232_374_p257_331_noise_reverb05_mix/p232_374_p257_331_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_374_p257_331_noise_reverb05_mix/p232_374_p257_331_mixed.wav"
-    # SCM lossの有効性は確認できないが、雑音の音量が小さい分残響が除去されている様子がはっきりわかる
-    # target_voice_file = "./test/p232_271_p257_082_noise_reverb03_mix/p232_271_target.wav"
-    # interference_audio_file = "./test/p232_271_p257_082_noise_reverb03_mix/p232_271_p257_082_interference_azimuth45.wav"
-    # noise_file = "./test/p232_271_p257_082_noise_reverb03_mix/p232_271_p257_082_noise_azimuth180.wav"
-    # mixed_audio_file = "./test/p232_271_p257_082_noise_reverb03_mix/p232_271_p257_082_mixed.wav"
-
-    # 日本語話者2人版
-    # # 男性1人＋女性1人
-    # target_voice_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0001.wav"
-    # interference_audio_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0034.wav"
-    # mixed_audio_file = "./test/BASIC5000_0001_BASIC5000_0034_mix/BASIC5000_0001_BASIC5000_034_mixed.wav"
-
+   
     wave_dir = "./output/wave/"
     os.makedirs(wave_dir, exist_ok=True)
     # オーディオファイルに対応する音声の波形を保存
@@ -226,26 +84,6 @@ def main():
     # 音声認識精度評価用正解ラベルを格納したディレクトリを指定
     reference_label_dir = "../AudioDatasets/NoisySpeechDatabase/testset_txt/"
 
-    # 学習済みのパラメータを保存したチェックポイントファイルのパスを指定
-    # NoisySpeechDataset_for_unet_fft_512_multi_wav_1207で学習
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_BLSTM_1202/ckpt_epoch80.pt" # BLSTM
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_all_FC_1202/ckpt_epoch80.pt" # FC
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1201/ckpt_epoch70.pt" # BLSTM small
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM_1211/ckpt_epoch80.pt" # BLSTM small2
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1208/ckpt_epoch110.pt" # U-Net aware channel←元ベストモデル
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_1211/ckpt_epoch160.pt" # U-Net aware channel2
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_median_1209/ckpt_epoch50.pt" # U-Net median operation
-    # NoisySpeechDataset_for_unet_fft_512_multi_wav_1209で学習
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_logmel_BLSTM_1209/ckpt_epoch100.pt" # BLSTM-logmel
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_BLSTM2_1231/ckpt_epoch100.pt" # BLSTM2 small
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_aware_20210111/ckpt_epoch100.pt" # U-Net aware channel←ベストモデル
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_CNN_aware_20210310/ckpt_epoch200.pt"
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_for_unet_fft_512_multi_wav_Unet_single_mask_median_20210315/ckpt_epoch170.pt" # U-Net-single-mask small data  (mask base best model)
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_Unet_single_mask_median_multisteplr00001start_20210701/ckpt_epoch190.pt" # U-Net-single-mask small data (mask base newest model)
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_snr_loss_multisteplr00001start_20210925/ckpt_epoch50.pt"
-    # checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_snr_loss_multisteplr00001start_20210922/ckpt_epoch490.pt" # Complex U-Net speech and noise output ch constant snr loss (signal base newest model)
-    checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_SCM_loss_finetune_SNR_loss_model_multisteplr000001start_2021119/ckpt_epoch530.pt" # Complex U-Net speech and noise output ch constant snr loss fine-tuned with SCM loss (signal base newest proposed model)
-
     # 音声認識結果を保存するディレクトリを指定
     recog_result_dir = "./recog_result/{}_{}_{}_{}_dereverb_type_{}/".format(target_voice_file.split('/')[-2], args.denoising_model_type, args.speaker_separation_model_type, args.beamformer_type, str(args.dereverb_type))
     os.makedirs(recog_result_dir, exist_ok=True)
@@ -257,8 +95,8 @@ def main():
     # ネットワークモデルの定義、チャンネルの選び方の指定、モデル入力時にパディングを行うか否かを指定
     # 雑音（残響）除去モデル
     if args.denoising_model_type == 'complex_unet':
+        checkpoint_path = "./ckpt/ckpt_NoisySpeechDataset_multi_wav_test_original_length_ComplexUnet_ch_constant_SCM_loss_finetune_SNR_loss_model_multisteplr000001start_2021119/ckpt_epoch530.pt" # Complex U-Net speech and noise output ch constant snr loss fine-tuned with SCM loss (proposed model)
         denoising_model = MCComplexUnet()
-        channel_select_type = 'single'
         padding = True
     else:
         print("Please specify the correct denoising model type")
@@ -271,7 +109,7 @@ def main():
 
     # 音声処理クラスのインスタンスを作成
     # audio_processor = AudioProcess(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
-    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, channel_select_type, padding)
+    audio_processor = AudioProcessForComplex(args.sample_rate, args.fft_size, args.hop_length, padding)
 
     # 学習済みのパラメータをロード
     denoising_model_params = torch.load(checkpoint_path, map_location=device)
@@ -337,7 +175,6 @@ def main():
     mixed_audio_data_for_model_input = torch.transpose(torch.from_numpy(mixed_audio_data).float(), 0, 1)
     mixed_audio_data_for_model_input = mixed_audio_data_for_model_input.to(device) # モデルをCPUまたはGPUへ
     """mixed_audio_data_for_model_input: (num_channels, num_samples)"""
-    # start_time_denoiser = time.perf_counter()
     mixed_amp_phase_spec_batch = audio_processor.preprocess_mask_estimator(mixed_audio_data_for_model_input, args.batch_length)
     """amp_phase_spec_batch: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
     # 発話とそれ以外の雑音の時間周波数マスクを推定
@@ -345,9 +182,9 @@ def main():
     """speech_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary), 
     noise_amp_phase_spec_output: (batch_size, num_channels, freq_bins, time_frames, real_imaginary)"""
     # ミニバッチに分けられた振幅＋位相スペクトログラムを時間方向に結合
-    multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.batch_length, args.target_aware_channel)
+    multichannel_speech_amp_phase_spec= audio_processor.postprocess_mask_estimator(mixed_complex_spec, speech_amp_phase_spec_output, args.batch_length)
     """multichannel_speech_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
-    multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.batch_length, args.noise_aware_channel)
+    multichannel_noise_amp_phase_spec = audio_processor.postprocess_mask_estimator(mixed_complex_spec, noise_amp_phase_spec_output, args.batch_length)
     """multichannel_noise_amp_phase_spec: (num_channels, freq_bins, time_frames, real_imaginary)"""
     # torch.stftを使用する場合
     # 発話のマルチチャンネルスペクトログラムを音声波形に変換
@@ -358,12 +195,7 @@ def main():
     multichannel_noise_data = torch.istft(multichannel_noise_amp_phase_spec, n_fft=512, hop_length=160, \
                                                 normalized=True, length=mixed_audio_data.shape[0], return_complex=False)
     """multichannel_noise_data: (num_channels, num_samples)"""
-    # finish_time_denoiser = time.perf_counter()
-    # duration_speech_separator = finish_time_denoiser - start_time_denoiser
-    # rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
-    # print("実時間比（denoisor）：{:.3f}".format(rtf))
 
-    # start_time_speech_separator = time.perf_counter()
     # 話者分離モデルに入力できるようにバッチサイズの次元を追加
     multichannel_denoised_data = torch.unsqueeze(multichannel_denoised_data, 0)
     """multichannel_denoised_data: (batch_size, num_channels, num_samples)"""
@@ -373,12 +205,7 @@ def main():
     # チャンネルごとに順序がばらばらな発話の順序を揃える
     separated_audio_data = solve_inter_channel_permutation_problem(separated_audio_data)
     """separated_audio_data: (batch_size, num_speakers, num_channels, num_samples)"""
-    # finish_time_speech_separator = time.perf_counter()
-    # duration_speech_separator = finish_time_speech_separator - start_time_speech_separator
-    # rtf = duration_speech_separator / (mixed_audio_data.shape[0] / args.sample_rate)
-    # print("実時間比（speech_separator）：{:.3f}".format(rtf))
-    
-    # start_time_speeaker_selector = time.perf_counter()
+
     # PyTorchのテンソルをNumpy配列に変換
     separated_audio_data = separated_audio_data.cpu().detach().numpy().copy() # CPU
     # バッチの次元を消して転置
@@ -387,11 +214,6 @@ def main():
     # 分離音から目的話者の発話を選出（何番目の発話が目的話者のものかを判断） →いずれはspeaker_selectorに統一する TODO
     target_speaker_id, speech_complex_spec_all = audio_processor.speaker_selector_sig_ver(separated_audio_data, ref_dvec, embedder, device)
     """speech_complex_spec_all: (num_speakers, num_channels, freq_bins, time_frames)"""
-    # print("ID of the target speaker:", target_speaker_id)
-    # finish_time_speeaker_selector = time.perf_counter()
-    # duration_speeaker_selector = finish_time_speeaker_selector - start_time_speeaker_selector
-    # rtf = duration_speeaker_selector / (mixed_audio_data.shape[0] / args.sample_rate)
-    # print("実時間比（Speaker Selector）：{:.3f}".format(rtf))
 
     # 目的話者の発話の複素スペクトログラムを取得
     multichannel_target_complex_spec = speech_complex_spec_all[target_speaker_id]
