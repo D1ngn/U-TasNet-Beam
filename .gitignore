@@ -47,6 +47,7 @@ training_mask_base.py
 training_ComplexUnet_SCM_loss.ipynb
 
 evaluate_mask_beamformer_azimuth_wise.ipynb
+evaluate_neural_beamformer_mask_base.ipynb
 evaluate_MCConvTasNet.ipynb
 
 make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data.ipynb
@@ -78,3 +79,5 @@ calc_voice_similarity.py
 calc_reverb_time.py
 
 test.py
+
+

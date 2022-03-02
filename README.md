@@ -43,11 +43,15 @@ $ pip3 install -r requirements.txt
    $ tar *.zip 
    ```
 
-   Second, open jupyter notebook and run `make_multi_wav_using_NoisySpeechDatabase_fft_512_with_RIR_azimuth_wise_same_data_test_original_length_reverb.ipynb` to make training dataset for U-TasNet-Beam
+   Second, open jupyter notebook and run `make_train_val_datasets_MCCUNet.ipynb` to make a training and validation dataset for MCCU-Net.
+   Besides, run `make_train_val_datasets_MCConvTasNet.ipynb` to make a training and validation dataset for MCConvTasNet.
+
 
    ```
    $ jupyter notebook
    ```
+
+   Finally, run `make_test_datasets.ipynb` to make a test dataset for performace evaluation of U-TasNet-Beam.
 
    
 
