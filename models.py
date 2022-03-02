@@ -875,7 +875,7 @@ class MCComplexUnet(nn.Module):
         # self.out_layer_speech = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
         # self.out_layer_noise = Decoder(filter_size=(3,3), stride_size=(2,2), in_channels=32, out_channels=8, padding=(1,1), last_layer=True)
         
-    def forward(self, x, is_istft=False):
+    def forward(self, x):
         """x: (batch_size, num_channels, freq_bins, time_steps, real-imaginary)"""
         # downsampling/encoding
         d0 = self.downsample0(x)
@@ -1055,7 +1055,9 @@ class MaskGenerator(torch.nn.Module):
         output = self.output_prelu(output)
         output = self.output_conv(output)
         output = torch.sigmoid(output)
-        return output.view(batch_size, self.num_sources, self.input_dim, -1)
+        """output: (batch_size, num_speakers*enc_dim, feature_frame_length)"""
+        # return output.view(batch_size, self.num_sources, self.input_dim, -1)
+        return output.view(batch_size, self.num_sources, self.input_dim, output.shape[2]) # TensorRTでエラーが出ないように修正
 
 
 class MCConvTasNet(torch.nn.Module):
@@ -1097,7 +1099,7 @@ class MCConvTasNet(torch.nn.Module):
 
         self.encoder = torch.nn.Conv1d(
             # in_channels=1,
-            in_channels=8,
+            in_channels=8, # マルチチャンネル音声を入力できるように変更
             out_channels=enc_num_feats,
             kernel_size=enc_kernel_size,
             stride=self.enc_stride,
@@ -1114,9 +1116,11 @@ class MCConvTasNet(torch.nn.Module):
             num_stacks=msk_num_stacks,
         )
         self.decoder = torch.nn.ConvTranspose1d(
-            in_channels=enc_num_feats,
+            # in_channels=enc_num_feats,
             # out_channels=1,
-            out_channels=8,
+            in_channels=enc_num_feats*num_sources, # TensorRT用に変更 
+            # out_channels=8, # マルチチャンネル音声を出力できるように変更
+            out_channels=16, # マルチチャンネル音声を出力できるように変更＋TensorRT用に変更
             kernel_size=enc_kernel_size,
             stride=self.enc_stride,
             padding=self.enc_stride,
@@ -1194,10 +1198,20 @@ class MCConvTasNet(torch.nn.Module):
         feats = self.encoder(padded)  # B, F, M
         """feats: (batch_size, feature_dim, feature_frame_length)"""
         masked = self.mask_generator(feats) * feats.unsqueeze(1)  # B, S, F, M
+        """masked: (batch_size, num_speakers, feature_dim, feature_frame_length)"""
+        # masked = masked.view(
+        #     batch_size * self.num_sources, self.enc_num_feats, -1
+        # )  # B*S, F, M
+        # """masked: (batch_size*num_speakers, feature_dim, feature_frame_length)"""
+        # decoded = self.decoder(masked)  # B*S, 1, L'
+        # """decoded: (batch_size*num_speakers, num_channles, num_samples)"""
+        # TensorRTでエラーが出ないように修正（上記のviewの処理でバッチの次元が消えてしまうことによりTensorRTではエラーが出る）
         masked = masked.view(
-            batch_size * self.num_sources, self.enc_num_feats, -1
-        )  # B*S, F, M
-        decoded = self.decoder(masked)  # B*S, 1, L'
+            batch_size, self.num_sources * self.enc_num_feats, -1
+        )  # B, S*F, M
+        """masked: (batch_size, num_speakers*feature_dim, feature_frame_length)"""
+        decoded = self.decoder(masked) # B, S*C, L'
+        """decoded: (batch_size, num_speakers*num_channles, num_samples)"""
         output = decoded.view(
             # batch_size, self.num_sources, num_padded_frames # B, S, L'
             batch_size, self.num_sources, num_channels, num_padded_frames # B, S, C, L'

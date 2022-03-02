@@ -194,11 +194,11 @@ def estimate_covariance_matrix_sig_batch_torch(complex_spec):
     # 固有値分解をして半正定値行列に変換（eighはPyTorchのバージョン1.9以降で実装）
     eigenvalues, eigenvectors = torch.linalg.eigh(spatial_covariance_matrix) #   numpy.linalg.eighとtorch.linalg.eighの挙動の違いを確認する必要がある TODO
     """eigenvalues: (batch_size, freq_bins, num_microphones), eigenvectors: (batch_size, freq_bins, num_microphones, num_microphones)"""
-#     # 固有値が0より小さい場合は微小な数に置き換える
-#     mask = eigenvalues.ge(0) # 0以上の部分をTrue、0より小さい部分をFlaseとしたマスクを生成
-#     eigenvalues = eigenvalues * mask
-#     eigenvalues = eigenvalues.masked_fill(mask==False, 1e-18)
-#     eigenvalues[eigenvalues < 1e-18] = 1e-18 # 固有値が0より小さい場合は0に置き換える # in-place operationはbackward時にエラーが出る（これは使えない）
+    # 固有値が0より小さい場合は微小な数に置き換える
+    mask = eigenvalues.ge(0) # 0以上の部分をTrue、0より小さい部分をFlaseとしたマスクを生成
+    eigenvalues = eigenvalues * mask
+    eigenvalues = eigenvalues.masked_fill(mask==False, 1e-18) # 固有値が0より小さい部分（False）を微小な数に置き換える
+#     eigenvalues[eigenvalues < 1e-18] = 1e-18 # 固有値が0より小さい場合は微小な数に置き換える # in-place operationはbackward時にエラーが出る（これは使えない）
     spatial_covariance_matrix = torch.einsum("bfmi,bfi,bfni->bfmn", eigenvectors, eigenvalues, torch.conj(eigenvectors))
     """spatial_covariance_matrix: (batch_size, freq_bins, num_microphones, num_microphones)"""
     return spatial_covariance_matrix
@@ -248,7 +248,8 @@ def condition_covariance(x, device, eps=1e-6):
     scale = eps * trace(x) /  x.shape[-1]
     scaled_eye = torch.eye(x.shape[-1]).to(device) * scale
     return (x + scaled_eye) / (1 + eps)
-    
+
+# 推定した空間相関行列と正解の空間相関行列のL1 lossを算出するオリジナルの損失関数
 def scm_loss(clean, estimated, device, flag, num_channels=8):
     """
     clean: (batch_size*num_channels, num_samples)

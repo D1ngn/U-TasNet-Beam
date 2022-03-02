@@ -275,13 +275,13 @@ if __name__ == '__main__':
     batch_size = 64 # バッチサイズ
     fft_size = 512 # 短時間フーリエ変換のフレーム長
     hop_length = 160 # 短時間フーリエ変換においてフレームをスライドさせる幅
-    model_type = 'Complex_Unet'
+    model_type = 'MCConvTasNet'
     # ネットワークモデルの定義、チャンネルの選び方の指定、モデル入力時にパディングを行うか否かを指定
-    if model_type == 'Complex_Unet':
+    if model_type == 'MCConvTasNet':
         model = MCConvTasNet()
     
     # データセットを作成
-    dataset_dir = "../data/NoisySpeechDataset_multi_wav_for_ConvTasnet_20210928/" # Conv-TasNet学習用のデータ
+    dataset_dir = "./data/NoisySpeechDataset_multi_wav_for_ConvTasnet_20210928/" # Conv-TasNet学習用のデータ
     train_mixed_wav_list, train_target_wav_list, train_interference_wav_list, \
         val_mixed_wav_list, val_target_wav_list, val_interference_wav_list = mk_datapath_list(dataset_dir)
     # データセットのインスタンスを作成

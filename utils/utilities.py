@@ -8,11 +8,13 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 import librosa
 import soundfile as sf
 import subprocess
 import time
 
+from sklearn.linear_model import LinearRegression
 
 # データの前処理を行うクラス
 class AudioProcess():
@@ -542,14 +544,33 @@ class AudioProcessForComplex():
             if max_cos_similarity < cos_similarity:
                 max_cos_similarity = cos_similarity
                 target_speaker_id = speaker_id
-                
-#          # テスト用に話者分離後の音声を保存
-#         separated_dir = "./separated_voice/{}/".format(interference_azimuth)
-#         os.makedirs(separated_dir, exist_ok=True)
-#         separated_voice_path = os.path.join(separated_dir, "{}_separated_voice.wav".format(file_num))
-#         separated_voice_data = self.spec_to_wave(speech_complex_spec_all[target_speaker_id], multiple_speech_data[target_speaker_id])
-#         sf.write(separated_voice_path, separated_voice_data, 16000)
-            
+            # # 散布図を描画
+            # sns.set() # スタイルをきれいにするsns.set() # スタイルをきれいにする
+            # fig = plt.figure()
+            # ax = fig.add_subplot(111)
+            # plt.scatter(ref_dvec, speech_dvec)
+            # plt.xlabel("d-vector of voice sample")
+            # plt.ylabel("d-vector of separated speech{}".format(speaker_id+1))
+            # plt.grid(True)
+            # # 回帰直線を追加
+            # # 回帰分析 線形
+            # mod = LinearRegression()
+            # ref_dvec = pd.DataFrame(ref_dvec)
+            # speech_dvec = pd.DataFrame(speech_dvec)
+            # # 線形回帰モデル、予測値、R^2を評価
+            # mod_lin = mod.fit(ref_dvec, speech_dvec)
+            # y_lin_fit = mod_lin.predict(ref_dvec)
+            # r2_lin = mod.score(ref_dvec, speech_dvec)
+            # ax.text(0.10, 0.10, '$ R^{2} $=' + str(round(r2_lin, 3)), color="red")
+            # plt.plot(ref_dvec.values[:,:], y_lin_fit, color = 'red', linewidth=0.5)
+            # # グラフをファイルに保存する
+            # fig.savefig("./test/correlation_of_separated_and_ref/Correlation of separated speech{} dvec and ref dvec.png".format(speaker_id+1))
+        #  # テスト用に話者分離後の音声を保存
+        # separated_dir = "./separated_voice/{}/".format(interference_azimuth)
+        # os.makedirs(separated_dir, exist_ok=True)
+        # separated_voice_path = os.path.join(separated_dir, "{}_separated_voice.wav".format(file_num))
+        # separated_voice_data = self.spec_to_wave(speech_complex_spec_all[target_speaker_id], multiple_speech_data[target_speaker_id])
+        # sf.write(separated_voice_path, separated_voice_data, 16000)    
         return target_speaker_id, speech_complex_spec_all
     
     # 過去のマイクロホン入力信号の算出
@@ -841,7 +862,7 @@ def wave_plot(input_path, output_path, ylim_min=-1.0, ylim_max=1.0, fig_title=No
     ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(0.10)) # y軸の主目盛を0.10ごとに表示
     file_name = os.path.basename(output_path).split('.')[0] # データの名前を設定
     ax.plot(x, data, label='{}'.format(file_name)) # データをプロット
-    ax.legend(edgecolor="black") # 凡例を追加
+    # ax.legend(edgecolor="black") # 凡例を追加
     fig.savefig(output_path) # グラフを保存
 
 # スペクトログラムを図にプロットする関数

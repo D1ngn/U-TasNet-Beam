@@ -1,11 +1,9 @@
 asteroid==0.4.1
 CherryPy==18.6.1
 Cython==0.29.24
-espnet=0.9.9
-espnet-model-zoo==0.0.0a30
-librosa==0.8.1
+librosa==0.7.1
 matplotlib==3.3.4
-numpy==1.9.4
+numpy==1.21.4
 pyroomacoustics==0.4.3
 seaborn==0.11.1
 sounddevice==0.4.2

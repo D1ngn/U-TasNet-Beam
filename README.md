@@ -7,13 +7,13 @@ PyTorch implementation of "Adaptation of robots to the real environment by simul
 
 
 
-![](./utils/assets/neural_beamformer.png)
+![](./utils/assets/U-TasNet-Beam.png)
 
 
 
 ## Dependencies
 
-This code was tested on Python 3.8.1 with PyTorch 1.10.0, torchvision 0.11.1 and torchaudio 0.10.0.
+This code was tested on Python 3.8.1 with PyTorch 1.10.0, torchvision 0.11.1 and torchaudio 0.10.0. Optionally Install espnet and espnet-model-zoo if you need it.
 
 ```
 $ pip3 install -r requirements.txt
@@ -117,7 +117,7 @@ $ python3 training_MCConvTasNet.py
 
 2. Run
 
-   Open two terminals and run following commands in each terminal (Mac or Linux).
+   Open two terminals and run following commands in each terminal (Mac or Linux). Be careful to set the Julius server URL in `RealTimeDemo.py` and `speech_extracter_interface.py` to the correct one.
    
    - Server
 

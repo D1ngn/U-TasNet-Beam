@@ -284,6 +284,8 @@ def asr_eval(ref_text, hyp_text, result_path):
     ref_text: 正解ラベルのテキスト （例） ['IT', 'IS', 'MARVELLOUS']
     hyp_text: 音声認識結果のテキスト （例） ['IT', 'WAS', 'MADNESS']
     result_path: 音声認識性能の評価結果を保存するファイルのパス
+
+    参考にしたソースコードは「https://github.com/zszyellow/WER-in-python」
     """
     # build the matrix
     d = editDistance(ref_text, hyp_text)
