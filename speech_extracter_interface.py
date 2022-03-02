@@ -154,7 +154,7 @@ if __name__ == "__main__":
 
     # コマンドライン引数を受け取る
     parser = argparse.ArgumentParser(description='Real time voice separation')
-    parser.add_argument('-dm', '--denoising_mode', action='store_true', help='whether model denoises audio or not')
+    parser.add_argument('-em', '--extracting_mode', action='store_true', help='whether model extracts audio or not')
     parser.add_argument('-mg', '--mic_gain', type=int, default=1, help='Microphone gain')
     parser.add_argument('-sr', '--sample_rate', type=int, default=16000, help='sampling rate')
     parser.add_argument('-cs', '--chunk_size', type=int, default=48000, help='chunk size of denoising model input')

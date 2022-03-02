@@ -53,7 +53,7 @@ $ pip3 install -r requirements.txt
 
    Finally, run `make_test_datasets.ipynb` to make a test dataset for performace evaluation of U-TasNet-Beam.
 
-   
+
 
 
 
@@ -129,7 +129,7 @@ $ python3 training_MCConvTasNet.py
    - Client
    
      ```
-     $ python3 RealTimeDemo.py -dm -d 0 -mg 20
+     $ python3 RealTimeDemo.py -em -d 0 -mg 20
      ```
    
      **Option**
@@ -156,7 +156,7 @@ $ python3 training_MCConvTasNet.py
    - Speech extracter interface (server & client)
 
      ```
-     $ python3 speech_extracter_interface.py -dm -mg 20
+     $ python3 speech_extracter_interface.py -em -mg 20
      ```
    
    - Input stream client
