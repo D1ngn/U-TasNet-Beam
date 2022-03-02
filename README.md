@@ -105,6 +105,7 @@ $ python3 training_MCConvTasNet.py
 
 
 
+
 ## Online demo
 
 1. Prepare the microphone array
@@ -176,6 +177,7 @@ $ python3 training_MCConvTasNet.py
 ## Author
 
 Daichi Nagano at nakazawa lab
+
 E-mail: naganod1@gmail.com
 
 
